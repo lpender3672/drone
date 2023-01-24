@@ -24,5 +24,8 @@ add_compile_options(-Wall
         -Wno-maybe-uninitialized
         )
 
+add_subdirectory(tests)
+
 add_subdirectory(pwm)
+add_subdirectory(drone)
 

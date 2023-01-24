@@ -1,0 +1,9 @@
+
+# LaTeX stuff
+*.fls
+report.log
+report.out
+*.aux
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
