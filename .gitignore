@@ -6,6 +6,7 @@ cmake-*
 build
 .DS_Store
 *.pdf
+cad
 
 # Prerequisites
 *.d
