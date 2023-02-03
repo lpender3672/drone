@@ -16,13 +16,13 @@ First install pico-sdk in the same directory as the project or elsewhere and set
 ```
 git clone -b master https://github.com/raspberrypi/pico-sdk.git
 cd pico-sdk
-git submodule update --init <br>
+git submodule update --init
 ```
 Then using __Developer command prompt for VS2022__ in the project directory run the following commands: <br>
 ```
-mkdir build <br>
-cd build <br>
-cmake -G “NMake Makefiles” .. <br>
+mkdir build
+cd build
+cmake -G “NMake Makefiles” ..
 ```
 Then to build the project run, while still in the Developer command prompt for VS2022:
 ```
