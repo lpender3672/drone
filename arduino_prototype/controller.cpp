@@ -3,8 +3,6 @@
 #include "controller.h"
 
 controller::controller(double Kp, double Ki, double Kd) {
-    this->control_pin = control_pin;
-    this->feedback_pin = feedback_pin;
     this->Kp = Kp;
     this->Ki = Ki;
     this->Kd = Kd;

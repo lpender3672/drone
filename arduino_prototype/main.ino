@@ -16,21 +16,21 @@ Its also a bit slow
 #define ESC3 6
 #define ESC4 9
 
+double dt;
+long lastmillis = 0;
+
 void setup() {
     // put your setup code here, to run once:
     Serial.begin(9600);
 
     controller pitch(0.1, 0.1, 0.1);
     controller roll(0.1, 0.1, 0.1);
-    controller yaw(0.1, 0.1, 0.1)
+    controller yaw(0.1, 0.1, 0.1);
 
     controller altitude(0.1, 0.1, 0.1);
 
     //controller x(0.1, 0.1, 0.1);
     //controller y(0.1, 0.1, 0.1);
-
-    double dt;
-    long lastmillis = 0;
 
     double req_pitch = PI/4;
     double req_roll = 0;
@@ -39,6 +39,8 @@ void setup() {
 
     pitch.set_setpoint(req_pitch);
     roll.set_setpoint(req_roll);
+    yaw.set_setpoint(req_yaw);
+    altitude.set_setpoint(req_altitude);
 
 }
 
