@@ -1,5 +1,8 @@
+
+
 add_executable(main
         main.cpp
+        Adafruit_BNO055.cpp
         )
 
 # pull in common dependencies and additional pwm hardware support

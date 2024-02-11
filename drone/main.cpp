@@ -7,6 +7,9 @@
 #include "hardware/i2c.h"
 #include <Eigen/Dense>
 
+#include "Adafruit_Sensor.h"
+#include "Adafruit_BNO055.h"
+
 /// \tag::hello_uart[]
 
 #define UART_ID uart0
@@ -17,16 +20,34 @@
 #define UART_TX_PIN 0
 #define UART_RX_PIN 1
 
+#define BNO055_ADDRESS_A (0x28)
+
+#define BNO055_SAMPLERATE_DELAY_MS (100)
+
 
 
 int main() {
     // Set up our UART with the required speed.
+    const uint sda_pin = 16;
+    const uint scl_pin = 17;
+
+    i2c_inst_t *i2c = i2c0;
+
     uart_init(UART_ID, BAUD_RATE);
+    stdio_init_all();
+    i2c_init(i2c, 400 * 1000);
+
+    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+
+    gpio_set_function(sda_pin, GPIO_FUNC_I2C);
+    gpio_set_function(scl_pin, GPIO_FUNC_I2C);
+
+    Adafruit_BNO055 bno = Adafruit_BNO055(1, BNO055_ADDRESS_A, i2c);
 
     // Set the TX and RX pins by using the function select on the GPIO
     // Set datasheet for more information on function select
-    gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+    
 
     // Use some the various UART functions to send out data
     // In a default system, printf will also output via the default UART
@@ -45,6 +66,8 @@ int main() {
     m(1,0) = 2.5;
     m(0,1) = -1;
     m(1,1) = m(1,0) + m(0,1);
+
+    Eigen::Quaternionf q(0.7071, 0.7071, 0, 0);
 
     const uint LED_PIN = PICO_DEFAULT_LED_PIN;
     gpio_init(LED_PIN);
