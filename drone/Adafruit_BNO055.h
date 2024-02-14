@@ -22,10 +22,10 @@
 #ifndef __ADAFRUIT_BNO055_H__
 #define __ADAFRUIT_BNO055_H__
 
-#define byte uint8_t
-
 #include "hardware/i2c.h"
 #include "Adafruit_Sensor.h"
+#include <cstring>
+#include <Eigen/Dense>
 
 /** BNO055 Address A **/
 #define BNO055_ADDRESS_A (0x28)
@@ -314,9 +314,9 @@ public:
   void enterNormalMode();
 
 private:
-  byte read8(adafruit_bno055_reg_t);
-  bool readLen(adafruit_bno055_reg_t, byte *buffer, uint8_t len);
-  bool write8(adafruit_bno055_reg_t, byte value);
+  uint8_t read8(adafruit_bno055_reg_t);
+  bool readLen(adafruit_bno055_reg_t, uint8_t *buffer, uint8_t len);
+  bool write8(adafruit_bno055_reg_t, uint8_t value);
 
   i2c_inst_t  *i2c_dev = NULL; ///< Pointer to I2C bus interface
 

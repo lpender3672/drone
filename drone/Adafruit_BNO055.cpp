@@ -30,7 +30,6 @@
 
 #include <limits.h>
 #include <math.h>
-#include <Eigen/Dense>
 
 #include "Adafruit_BNO055.h"
 
@@ -77,11 +76,6 @@ Adafruit_BNO055::Adafruit_BNO055(int32_t sensorID, uint8_t address,
 bool Adafruit_BNO055::begin(adafruit_bno055_opmode_t mode) {
   // Start without a detection
 
-#if defined(TARGET_RP2040)
-  // philhower core seems to work with this speed?
-  i2c_dev->setSpeed(50000);
-#endif
-
   // can take 850 ms to boot!
   int timeout = 850; // in ms
   while (timeout > 0) {
@@ -89,8 +83,6 @@ bool Adafruit_BNO055::begin(adafruit_bno055_opmode_t mode) {
     sleep_ms(10);
     timeout -= 10;
   }
-  if (timeout <= 0)
-    return false;
 
   /* Make sure we have the right device */
   uint8_t id = read8(BNO055_CHIP_ID_ADDR);
@@ -840,7 +832,7 @@ void Adafruit_BNO055::enterNormalMode() {
 /*!
  *  @brief  Writes an 8 bit value over I2C
  */
-bool Adafruit_BNO055::write8(adafruit_bno055_reg_t reg, byte value) {
+bool Adafruit_BNO055::write8(adafruit_bno055_reg_t reg, uint8_t value) {
   uint8_t buffer[2] = {(uint8_t)reg, (uint8_t)value};
   i2c_write_blocking(i2c_dev, _i2c_address, buffer, 2, false);
 
@@ -850,7 +842,7 @@ bool Adafruit_BNO055::write8(adafruit_bno055_reg_t reg, byte value) {
 /*!
  *  @brief  Reads an 8 bit value over I2C
  */
-byte Adafruit_BNO055::read8(adafruit_bno055_reg_t reg) {
+uint8_t Adafruit_BNO055::read8(adafruit_bno055_reg_t reg) {
   uint8_t buffer[1];
   int num_bytes_read = 0;
   uint8_t reg_addr = (uint8_t)reg;
@@ -862,13 +854,13 @@ byte Adafruit_BNO055::read8(adafruit_bno055_reg_t reg) {
     return 0;
   }
 
-  return (byte)buffer[0];
+  return (uint8_t)buffer[0];
 }
 
 /*!
  *  @brief  Reads the specified number of bytes over I2C
  */
-bool Adafruit_BNO055::readLen(adafruit_bno055_reg_t reg, byte *buffer,
+bool Adafruit_BNO055::readLen(adafruit_bno055_reg_t reg, uint8_t *buffer,
                               uint8_t len) {
 
   int num_bytes_read = 0;
