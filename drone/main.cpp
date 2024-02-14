@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 #include "Adafruit_Sensor.h"
 #include "Adafruit_BNO055.h"
+#include "CrsfSerial.h"
 
 
 int main(void){
