@@ -36,12 +36,7 @@ jobs:
       run: echo "PICO_SDK_PATH=${{github.workspace}}/pico-sdk" >> "$GITHUB_ENV"
 
     - name: Install Eigen
-      uses: giantswarm/install-binary-action@VERSION
-      with:
-        download_url: "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz"
-        tarball_binary_path: "${{github.workspace}}/eigen""
-        version: "_"
-        binary: "_"
+      run: wget -q -O - "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" | tar -xzf - -C ${{github.workspace}}/eigen
 
     - name: Set Eigen3_DIR
       run: echo "Eigen3_DIR=${{github.workspace}}/eigen/share/eigen3/cmake" >> "$GITHUB_ENV"
