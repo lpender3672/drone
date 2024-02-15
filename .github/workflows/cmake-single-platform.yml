@@ -44,7 +44,7 @@ jobs:
         mkdir build
         cd build
         cmake ${{github.workspace}}/eigen-3.4.0
-        make install
+        sudo make install
         - run: echo "Eigen Installed to ${{github.workspace}}/eigen-3.4.0"
 
     - name: Set Eigen3_DIR
