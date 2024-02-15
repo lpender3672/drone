@@ -35,10 +35,16 @@ jobs:
     - name: Set PICO_SDK_PATH
       run: echo "PICO_SDK_PATH=${{github.workspace}}/pico-sdk" >> "$GITHUB_ENV"
 
+    - name: Clone Eigen
+      run: git clone https://github.com/libigl/eigen.git ${{github.workspace}}/eigen
+
+    - name: Set Eigen3_DIR
+      run: echo "Eigen3_DIR=${{github.workspace}}/eigen" >> "$GITHUB_ENV"
+
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      run: cmake --build ${{github.workspace}}/build -G "NMake Makefiles"
 
     - name: Build
       # Build your program with the given configuration
