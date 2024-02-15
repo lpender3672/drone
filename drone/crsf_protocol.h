@@ -78,30 +78,30 @@ typedef enum
 
 typedef struct crsf_header_s
 {
-    uint8_t device_addr; // from crsf_addr_e
-    uint8_t frame_size;  // counts size after this byte, so it must be the payload size + 2 (type and crc)
-    uint8_t type;        // from crsf_frame_type_e
+    uint8_t device_addr : 8; // from crsf_addr_e
+    uint8_t frame_size : 8;  // counts size after this byte, so it must be the payload size + 2 (type and crc)
+    uint8_t type : 8;        // from crsf_frame_type_e
     uint8_t data[0];
 } PACKED crsf_header_t;
 
 typedef struct crsf_channels_s
 {
-    unsigned ch0 : 11;
-    unsigned ch1 : 11;
-    unsigned ch2 : 11;
-    unsigned ch3 : 11;
-    unsigned ch4 : 11;
-    unsigned ch5 : 11;
-    unsigned ch6 : 11;
-    unsigned ch7 : 11;
-    unsigned ch8 : 11;
-    unsigned ch9 : 11;
-    unsigned ch10 : 11;
-    unsigned ch11 : 11;
-    unsigned ch12 : 11;
-    unsigned ch13 : 11;
-    unsigned ch14 : 11;
-    unsigned ch15 : 11;
+    unsigned ch0 : 10;
+    unsigned ch1 : 10;
+    unsigned ch2 : 10;
+    unsigned ch3 : 10;
+    unsigned ch4 : 1;
+    unsigned ch5 : 10;
+    unsigned ch6 : 10;
+    unsigned ch7 : 10;
+    unsigned ch8 : 10;
+    unsigned ch9 : 10;
+    unsigned ch10 : 10;
+    unsigned ch11 : 10;
+    unsigned ch12 : 10;
+    unsigned ch13 : 10;
+    unsigned ch14 : 10;
+    unsigned ch15 : 10;
 } PACKED crsf_channels_t;
 
 typedef struct crsfPayloadLinkstatistics_s

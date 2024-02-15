@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <cstring>
 #include "crc8.h"
 #include "crsf_protocol.h"
 #include "pico/stdlib.h"
@@ -9,7 +10,7 @@
 
 enum eFailsafeAction { fsaNoPulses, fsaHold };
 
-uint32_t math_map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max);
+uint32_t interp(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max);
 
 class CrsfSerial
 {
@@ -18,7 +19,7 @@ public:
     static const unsigned int CRSF_PACKET_TIMEOUT_MS = 100;
     static const unsigned int CRSF_FAILSAFE_STAGE1_MS = 300;
 
-    CrsfSerial(uart_inst_t &port, uint32_t baud = CRSF_BAUDRATE);
+    CrsfSerial(uart_inst_t *port, uint32_t baud = CRSF_BAUDRATE);
     void begin(uint32_t baud = 0);
     void loop();
     void write(uint8_t b);

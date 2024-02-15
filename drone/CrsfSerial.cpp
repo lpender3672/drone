@@ -1,12 +1,5 @@
 
-#include <stdio.h>
-#include <cstring>
 #include "CrsfSerial.h"
-#include "pico/stdlib.h"
-#include "hardware/uart.h"
-#include "hardware/irq.h"
-#include "pico/time.h"
-
 
 // static void hexdump(void *p, size_t len)
 // {
@@ -39,14 +32,14 @@
 // }
 
 
-uint32_t math_map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max)
+uint32_t interp(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max)
 {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 
-CrsfSerial::CrsfSerial(uart_inst_t &port, uint32_t baud) :
-    _port(&port), _crc(0xd5), _baud(baud),
+CrsfSerial::CrsfSerial(uart_inst_t *port, uint32_t baud):
+    _port(port), _crc(0xd5), _baud(baud),
     _lastReceive(0), _lastChannelsPacket(0), _linkIsUp(false),
     _passthroughBaud(0)
 {}
@@ -208,7 +201,7 @@ void CrsfSerial::packetChannelsPacked(const crsf_header_t *p)
     _channels[15] = ch->ch15;
 
     for (unsigned int i=0; i<CRSF_NUM_CHANNELS; ++i)
-        _channels[i] = math_map(
+        _channels[i] = interp(
             _channels[i], 
             CRSF_CHANNEL_VALUE_1000, 
             CRSF_CHANNEL_VALUE_2000, 
