@@ -17,7 +17,7 @@ set(PICO_EXAMPLES_PATH ${PROJECT_SOURCE_DIR})
 pico_sdk_init()
 
 set(Eigen3_DIR "C:/Program Files (x86)/Eigen3/share/eigen3/cmake")
-find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 include(example_auto_set_url.cmake)
 
