@@ -36,10 +36,10 @@ jobs:
       run: echo "PICO_SDK_PATH=${{github.workspace}}/pico-sdk" >> "$GITHUB_ENV"
 
     - name: Install Eigen
-      run: wget -q -O - "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" | tar -xzf - -C ${{github.workspace}}/eigen
+      run: wget -q -O - "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz" | tar -xzf - -C ${{github.workspace}}
 
     - name: Set Eigen3_DIR
-      run: echo "Eigen3_DIR=${{github.workspace}}/eigen/share/eigen3/cmake" >> "$GITHUB_ENV"
+      run: echo "Eigen3_DIR=${{github.workspace}}/eigen-3.4.0/share/eigen3/cmake" >> "$GITHUB_ENV"
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
