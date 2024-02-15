@@ -45,7 +45,6 @@ jobs:
         cd build
         cmake ${{github.workspace}}/eigen-3.4.0
         sudo make install
-        - run: echo "Eigen Installed to ${{github.workspace}}/eigen-3.4.0"
 
     - name: Set Eigen3_DIR
       run: echo "Eigen3_DIR=${{github.workspace}}/eigen-3.4.0/share/eigen3/cmake" >> "$GITHUB_ENV"
