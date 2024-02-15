@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 
 # Pull in SDK (must be before project)
 include(pico_sdk_import.cmake)
+find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 project(drone C CXX ASM)
 set(CMAKE_C_STANDARD 11)
@@ -15,8 +16,6 @@ set(PICO_EXAMPLES_PATH ${PROJECT_SOURCE_DIR})
 
 # Initialize the SDK
 pico_sdk_init()
-
-find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 
 include(example_auto_set_url.cmake)
 

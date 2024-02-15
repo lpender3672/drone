@@ -42,6 +42,5 @@
         "ostream": "cpp"
     },
     "cmake.buildBeforeRun": true,
-    "cortex-debug.openocdPath": "C:/Program Files (x86)/OpenOCD-20231002-0.12.0/bin/openocd.exe",
-    "Eigen3_DIR" :"C:/Program Files (x86)/Eigen3/share/eigen3/cmake"
+    "cortex-debug.openocdPath": "C:/Program Files (x86)/OpenOCD-20231002-0.12.0/bin/openocd.exe"
 }
