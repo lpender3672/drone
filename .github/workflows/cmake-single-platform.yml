@@ -21,7 +21,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    
+
+    - name: arm-none-eabi-gcc GNU Arm Embedded Toolchain
+      uses: carlosperate/arm-none-eabi-gcc-action@v1.8.1
+      id: arm-none-eabi-gcc-action
+      
+    - name: The `path` to the toolchain executables can then be obtained as an output
+      run: echo "PICO_TOOLCHAIN_PATH=${{ steps.arm-none-eabi-gcc-action.outputs.path }}" >> "$GITHUB_ENV"
+            
     - name: Clone Pico SDK
       run: git clone https://github.com/raspberrypi/pico-sdk.git  ${{github.workspace}}/pico-sdk --recurse-submodules
 
