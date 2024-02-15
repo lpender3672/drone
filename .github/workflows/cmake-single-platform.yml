@@ -39,7 +39,7 @@ jobs:
       run: git clone https://github.com/libigl/eigen.git ${{github.workspace}}/eigen
 
     - name: Set Eigen3_DIR
-      run: echo "Eigen3_DIR=${{github.workspace}}/eigen" >> "$GITHUB_ENV"
+      run: echo "Eigen3_DIR=${{github.workspace}}/eigen/cmake" >> "$GITHUB_ENV"
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
