@@ -24,8 +24,9 @@ jobs:
     
     - name: Clone Pico SDK
       run: git clone https://github.com/raspberrypi/pico-sdk.git  ${{github.workspace}}/pico-sdk --recurse-submodules
-      env: 
-        PICO_SDK_PATH : "${{github.workspace}}/pico-sdk"
+
+    - name: Set PICO_SDK_PATH
+      run: echo "PICO_SDK_PATH=${{github.workspace}}/pico-sdk" >> "$GITHUB_ENV"
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
