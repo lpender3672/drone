@@ -10,7 +10,7 @@
 
 enum eFailsafeAction { fsaNoPulses, fsaHold };
 
-uint32_t interp(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max);
+int interp(int x, int in_min, int in_max, int out_min, int out_max);
 
 class CrsfSerial
 {

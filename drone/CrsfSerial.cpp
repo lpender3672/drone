@@ -32,7 +32,7 @@
 // }
 
 
-uint32_t interp(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max)
+int interp(int x, int in_min, int in_max, int out_min, int out_max)
 {
   return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
@@ -200,6 +200,7 @@ void CrsfSerial::packetChannelsPacked(const crsf_header_t *p)
     _channels[14] = ch->ch14;
     _channels[15] = ch->ch15;
 
+    /*
     for (unsigned int i=0; i<CRSF_NUM_CHANNELS; ++i)
         _channels[i] = interp(
             _channels[i], 
@@ -208,6 +209,8 @@ void CrsfSerial::packetChannelsPacked(const crsf_header_t *p)
             1000, 
             2000
             );
+    */
+    
 
     if (!_linkIsUp && onLinkUp)
         onLinkUp();

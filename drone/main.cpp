@@ -46,7 +46,7 @@ void packetChannels()
     channel_8_data = ELRS_rx.getChannel(8);
 
 
-    light_flag = channel_1_data > 1500 ? true : false;
+    light_flag = channel_1_data > 1000 ? true : false;
     gpio_put(25, light_flag);
 
         // X - Channel 1 - A
@@ -115,6 +115,34 @@ void packetChannels()
 
 }
 
+void crsfLinkUp() {
+
+  //gpio_put(25, true);
+}
+
+void crsfLinkDown() {
+
+  //gpio_put(25, false);
+}
+
+static void passthroughBegin(uint32_t baud)
+{
+    if (baud != ELRS_rx.getBaud())
+    {
+        // Force a reboot command since we want to send the reboot
+        // at 420000 then switch to what the user wanted
+        const uint8_t rebootpayload[] = { 'b', 'l' };
+        ELRS_rx.queuePacket(CRSF_ADDRESS_CRSF_RECEIVER, CRSF_FRAMETYPE_COMMAND, &rebootpayload, sizeof(rebootpayload));
+    }
+    ELRS_rx.setPassthroughMode(true, baud);
+    
+}
+
+static void crsfOobData(uint8_t b)
+{
+    printf("OOB: %02X\n", b);
+}
+
 int main(void){
     stdio_init_all(); // Initialise STD I/O for printing over serial
 
@@ -141,7 +169,11 @@ int main(void){
 
 
     ELRS_rx.onPacketChannels = &packetChannels;
-    ELRS_rx.begin(CRSF_BAUDRATE);
+    ELRS_rx.onPacketChannels = &packetChannels;
+    ELRS_rx.onLinkUp = &crsfLinkUp;
+    ELRS_rx.onLinkDown = &crsfLinkDown;
+    ELRS_rx.onOobData = &crsfOobData;
+    ELRS_rx.begin();
 
     // Call accelerometer initialisation function
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c0);
