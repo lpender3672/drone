@@ -148,11 +148,9 @@ static void crsfOobData(uint8_t b)
 }
 
 void arm_escs() {
-    esc0.setSpeed(0);
-    esc1.setSpeed(0);
     sleep_ms(500);
-    esc0.setSpeed(300);
-    esc1.setSpeed(300);
+    esc0.setSpeed(100);
+    esc1.setSpeed(100);
     sleep_ms(500);
     esc0.setSpeed(0);
     esc1.setSpeed(0);

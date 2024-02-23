@@ -18,7 +18,9 @@ ESC::ESC(uint8_t pin) {
     pwm_init(_pwm_slice, &config, true);
     pwm_set_wrap(_pwm_slice, _pwm_wrap);
 
-    
+    // reset
+    pwm_set_gpio_level(_pin, 0);
+    sleep_ms(100);
 }
 
 void ESC::setSpeed(uint speed) {
