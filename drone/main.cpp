@@ -8,6 +8,7 @@
 #include "Adafruit_Sensor.h"
 #include "Adafruit_BNO055.h"
 #include "CrsfSerial.h"
+#include "motor.h"
 
 
 #include "cal.h"
@@ -22,7 +23,12 @@
 
 #define ESC0_PIN 6
 
+
 CrsfSerial ELRS_rx = CrsfSerial(uart0);
+
+ESC esc0 = ESC(6);
+ESC esc1 = ESC(8);
+
 int channel_data;
 int map_data;
 
@@ -36,24 +42,6 @@ int channel_5_data;
 int channel_6_data;
 int channel_7_data;
 int channel_8_data;
-
-void on_pwm_wrap() {
-    static int fade = 0;
-    static bool calibrated = false;
-    // Clear the interrupt flag that brought us here
-    pwm_clear_irq(pwm_gpio_to_slice_num(ESC0_PIN));
-
-    if (!calibrated) {
-        ++fade;
-        if (fade > 1000000) {
-            fade = 0;
-            gpio_put(25, true);
-        }
-    }
-    // Square the fade value to make the LED's brightness appear more linear
-    // Note this range matches with the wrap value
-    pwm_set_gpio_level(ESC0_PIN, fade / 1000);
-}
 
 
 void packetChannels()
@@ -159,34 +147,23 @@ static void crsfOobData(uint8_t b)
     printf("OOB: %02X\n", b);
 }
 
+void arm_escs() {
+    esc0.setSpeed(0);
+    esc1.setSpeed(0);
+    sleep_ms(500);
+    esc0.setSpeed(300);
+    esc1.setSpeed(300);
+    sleep_ms(500);
+    esc0.setSpeed(0);
+    esc1.setSpeed(0);
+}
+
 int main(void){
     stdio_init_all(); // Initialise STD I/O for printing over serial
 
     // Configure the LED Pin
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
-
-    gpio_set_function(ESC0_PIN, GPIO_FUNC_PWM);
-    // Figure out which slice we just connected to the LED pin
-    uint ESC0_slice = pwm_gpio_to_slice_num(ESC0_PIN);
-
-    pwm_clear_irq(ESC0_slice);
-    pwm_set_irq_enabled(ESC0_slice, true);
-    irq_set_exclusive_handler(PWM_IRQ_WRAP, on_pwm_wrap);
-    irq_set_enabled(PWM_IRQ_WRAP, true);
-    // dont enable yet
-
-    pwm_config config = pwm_get_default_config();
-    // Set divider, so that the result is 24MHz
-    pwm_config_set_clkdiv(&config, 125/24);
-    // Load the configuration into our PWM slice, and set it running.
-    pwm_init(ESC0_slice, &config, true);
-
-    pwm_set_wrap(ESC0_slice, 1000);
-    pwm_set_gpio_level(ESC0_PIN, 0);
-    pwm_set_enabled(ESC0_slice, true);
-
-
 
     // Configure the I2C Communication
     i2c_init(i2c0, 400 * 1000);
@@ -214,6 +191,9 @@ int main(void){
     
     //ELRS_rx.begin();
 
+    arm_escs();
+    
+
     /*
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c0);
     if (!bno.begin()) {
@@ -234,12 +214,8 @@ int main(void){
 
     // Infinite Loop
     while(1){
-        
-        tight_loop_contents();
-        //ELRS_rx.loop();
+
 
         
-        
-
     }
 }

@@ -5,6 +5,7 @@ add_executable(main
         Adafruit_BNO055.cpp
         crc8.cpp
         CrsfSerial.cpp
+        motor.cpp
         )
 
 # pull in common dependencies and additional pwm hardware support
