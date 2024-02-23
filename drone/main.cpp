@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/pwm.h"
+#include "hardware/irq.h"
 
 #include <Eigen/Dense>
 #include "Adafruit_Sensor.h"
@@ -18,6 +20,8 @@
 #define UART_TX_PIN 0
 #define UART_RX_PIN 1
 
+#define ESC0_PIN 6
+
 CrsfSerial ELRS_rx = CrsfSerial(uart0);
 int channel_data;
 int map_data;
@@ -33,17 +37,27 @@ int channel_6_data;
 int channel_7_data;
 int channel_8_data;
 
+void on_pwm_wrap() {
+    static int fade = 0;
+    static bool calibrated = false;
+    // Clear the interrupt flag that brought us here
+    pwm_clear_irq(pwm_gpio_to_slice_num(ESC0_PIN));
+
+    if (!calibrated) {
+        ++fade;
+        if (fade > 1000000) {
+            fade = 0;
+            gpio_put(25, true);
+        }
+    }
+    // Square the fade value to make the LED's brightness appear more linear
+    // Note this range matches with the wrap value
+    pwm_set_gpio_level(ESC0_PIN, fade / 1000);
+}
+
 
 void packetChannels()
 {
-    channel_1_data = ELRS_rx.getChannel(1);
-    channel_2_data = ELRS_rx.getChannel(2);
-    channel_3_data = ELRS_rx.getChannel(3);
-    channel_4_data = ELRS_rx.getChannel(4);
-    channel_5_data = ELRS_rx.getChannel(5);
-    channel_6_data = ELRS_rx.getChannel(6);
-    channel_7_data = ELRS_rx.getChannel(7);
-    channel_8_data = ELRS_rx.getChannel(8);
 
 
     light_flag = channel_1_data > 1000 ? true : false;
@@ -51,15 +65,17 @@ void packetChannels()
 
         // X - Channel 1 - A
     channel_data = ELRS_rx.getChannel(1);
-    map_data = interp(channel_data, \
+    channel_1_data = interp(channel_data, \
       CHANNEL_1_LOW_EP,          \
       CHANNEL_1_HIGH_EP,         \
-      JOYSTICK_LOW,              \
-      JOYSTICK_HIGH);
+      0,              \
+      1000);
+
+    pwm_set_gpio_level(ESC0_PIN, map_data);
     
     // Y - Channel 2 - E
     channel_data = ELRS_rx.getChannel(2);
-    map_data = interp(channel_data, \
+    channel_2_data = interp(channel_data, \
       CHANNEL_2_LOW_EP,          \
       CHANNEL_2_HIGH_EP,         \
       JOYSTICK_LOW,              \
@@ -67,7 +83,7 @@ void packetChannels()
     
     // Rx - Channel 3 - T
     channel_data = ELRS_rx.getChannel(3);
-    map_data = interp(channel_data, \
+    channel_3_data = interp(channel_data, \
       CHANNEL_3_LOW_EP,          \
       CHANNEL_3_HIGH_EP,         \
       JOYSTICK_LOW,              \
@@ -150,6 +166,28 @@ int main(void){
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
 
+    gpio_set_function(ESC0_PIN, GPIO_FUNC_PWM);
+    // Figure out which slice we just connected to the LED pin
+    uint ESC0_slice = pwm_gpio_to_slice_num(ESC0_PIN);
+
+    pwm_clear_irq(ESC0_slice);
+    pwm_set_irq_enabled(ESC0_slice, true);
+    irq_set_exclusive_handler(PWM_IRQ_WRAP, on_pwm_wrap);
+    irq_set_enabled(PWM_IRQ_WRAP, true);
+    // dont enable yet
+
+    pwm_config config = pwm_get_default_config();
+    // Set divider, so that the result is 24MHz
+    pwm_config_set_clkdiv(&config, 125/24);
+    // Load the configuration into our PWM slice, and set it running.
+    pwm_init(ESC0_slice, &config, true);
+
+    pwm_set_wrap(ESC0_slice, 1000);
+    pwm_set_gpio_level(ESC0_PIN, 0);
+    pwm_set_enabled(ESC0_slice, true);
+
+
+
     // Configure the I2C Communication
     i2c_init(i2c0, 400 * 1000);
 
@@ -173,28 +211,34 @@ int main(void){
     ELRS_rx.onLinkUp = &crsfLinkUp;
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
-    ELRS_rx.begin();
+    
+    //ELRS_rx.begin();
 
-    // Call accelerometer initialisation function
+    /*
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c0);
     if (!bno.begin()) {
         printf("Fatal: No BNO055 detected");
         while(1);
     }
+    */
+    // Call accelerometer initialisation function
+    
 
-    sleep_ms(500);
-
+    /*
     int8_t temp = bno.getTemp();
     Eigen::Vector3f angles = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
     printf("Euler: %f, %f, %f\n", angles.x(), angles.y(), angles.z());
     Eigen::Quaternionf quat = bno.getQuat();
     printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
+    */
 
     // Infinite Loop
     while(1){
         
+        tight_loop_contents();
+        //ELRS_rx.loop();
 
-        ELRS_rx.loop();
+        
         
 
     }
