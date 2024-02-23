@@ -511,7 +511,7 @@ bool Adafruit_BNO055::getEvent(sensors_event_t *event) {
   event->version = sizeof(sensors_event_t);
   event->sensor_id = _sensorID;
   event->type = SENSOR_TYPE_ORIENTATION;
-  event->timestamp = get_absolute_time();
+  event->timestamp = to_us_since_boot(get_absolute_time());
 
   /* Get a Euler angle sample for orientation */
   Eigen::Vector3f euler = getVector(Adafruit_BNO055::VECTOR_EULER);
@@ -537,7 +537,7 @@ bool Adafruit_BNO055::getEvent(sensors_event_t *event,
 
   event->version = sizeof(sensors_event_t);
   event->sensor_id = _sensorID;
-  event->timestamp = get_absolute_time();
+  event->timestamp = to_us_since_boot(get_absolute_time());
 
   // read the data according to vec_type
   Eigen::Vector3f vec;

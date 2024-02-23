@@ -46,7 +46,7 @@ This took a while for me to set up so I will outline the requirements and steps 
 
 Requirements:
 * PicoProbe or additional Pico with firmware installed(https://www.raspberrypi.com/products/debug-probe/)
-* OpenOCD compiled for RP2040. This can be compiled from source from raspberrypi openocd repository (https://github.com/raspberrypi/openocd)
+* OpenOCD compiled for RP2040. This can be compiled from source from raspberrypi openocd repository (https://github.com/raspberrypi/openocd) or downloaded from the setup for windows releases here (https://github.com/raspberrypi/pico-setup-windows/releases)
 * GDB which is already included in the ARM GNU toolchain.
 * Visual Studio Code with CMake Tools and Cortex-Debug extensions installed.
 
