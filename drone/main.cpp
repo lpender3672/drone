@@ -57,9 +57,9 @@ void packetChannels()
       CHANNEL_1_LOW_EP,          \
       CHANNEL_1_HIGH_EP,         \
       0,              \
-      1000);
+      200);
 
-    pwm_set_gpio_level(ESC0_PIN, map_data);
+    esc0.setSpeed(channel_1_data);
     
     // Y - Channel 2 - E
     channel_data = ELRS_rx.getChannel(2);
@@ -187,9 +187,11 @@ int main(void){
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
     
-    //ELRS_rx.begin();
-
     arm_escs();
+
+    sleep_ms(500);
+
+    ELRS_rx.begin();
     
 
     /*
@@ -213,7 +215,7 @@ int main(void){
     // Infinite Loop
     while(1){
 
-
+      ELRS_rx.loop();
         
     }
 }
