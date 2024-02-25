@@ -26,8 +26,7 @@
 
 CrsfSerial ELRS_rx = CrsfSerial(uart0);
 
-ESC esc0 = ESC(6);
-ESC esc1 = ESC(8);
+ESC escs[4] = {ESC(8), ESC(10), ESC(22), ESC(28)};
 
 int channel_data;
 int map_data;
@@ -59,15 +58,17 @@ void packetChannels()
       0,              \
       200);
 
-    esc0.setSpeed(channel_1_data);
+    escs[0].setSpeed(channel_1_data);
     
     // Y - Channel 2 - E
     channel_data = ELRS_rx.getChannel(2);
     channel_2_data = interp(channel_data, \
       CHANNEL_2_LOW_EP,          \
       CHANNEL_2_HIGH_EP,         \
-      JOYSTICK_LOW,              \
-      JOYSTICK_HIGH);
+      0,              \
+      200);
+
+    escs[1].setSpeed(channel_2_data);
     
     // Rx - Channel 3 - T
     channel_data = ELRS_rx.getChannel(3);
@@ -149,11 +150,40 @@ static void crsfOobData(uint8_t b)
 
 void arm_escs() {
     sleep_ms(500);
-    esc0.setSpeed(100);
-    esc1.setSpeed(100);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(100);
+        escs[i].updateSpeed();
+    }
     sleep_ms(500);
-    esc0.setSpeed(0);
-    esc1.setSpeed(0);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(0);
+        escs[i].updateSpeed();
+        escs[i].is_armed = true;
+    }
+}
+
+void interrupt_handler() {
+    // set pwm value on pwm wrap finish
+
+    int irq;
+    int slice;
+
+    irq = pwm_get_irq_status_mask();
+
+    for (int i=0; i<4; i++)
+    {
+        slice = escs[i].get_slice();
+
+        if (irq & (1<<slice))
+        {
+            pwm_clear_irq(slice);
+            if (!escs[i].is_armed) continue;
+            // armed so update speed
+            escs[i].updateSpeed();
+        }
+    }
 }
 
 int main(void){
@@ -162,6 +192,11 @@ int main(void){
     // Configure the LED Pin
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
+
+    // configure esc pin interrupts
+    
+    irq_set_exclusive_handler(PWM_IRQ_WRAP, interrupt_handler);
+    irq_set_enabled(PWM_IRQ_WRAP, true);
 
     // Configure the I2C Communication
     i2c_init(i2c0, 400 * 1000);
