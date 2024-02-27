@@ -56,7 +56,7 @@ void packetChannels()
       CHANNEL_1_LOW_EP,          \
       CHANNEL_1_HIGH_EP,         \
       0,              \
-      200);
+      100);
 
     escs[0].setSpeed(channel_1_data);
     
@@ -66,7 +66,7 @@ void packetChannels()
       CHANNEL_2_LOW_EP,          \
       CHANNEL_2_HIGH_EP,         \
       0,              \
-      200);
+      100);
 
     escs[1].setSpeed(channel_2_data);
     
@@ -152,13 +152,29 @@ void arm_escs() {
     sleep_ms(500);
     for (int i=0; i<4; i++)
     {
-        escs[i].setSpeed(100);
+        escs[i].setSpeed(200);
         escs[i].updateSpeed();
     }
     sleep_ms(500);
     for (int i=0; i<4; i++)
     {
-        escs[i].setSpeed(0);
+        escs[i].setSpeed(0.0);
+        escs[i].updateSpeed();
+        escs[i].is_armed = true;
+    }
+}
+
+void calibrate_escs() {
+    sleep_ms(500);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(400);
+        escs[i].updateSpeed();
+    }
+    sleep_ms(3100);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(0.0);
         escs[i].updateSpeed();
         escs[i].is_armed = true;
     }
@@ -194,17 +210,9 @@ int main(void){
     gpio_set_dir(25, GPIO_OUT);
 
     // configure esc pin interrupts
-    
+  
     irq_set_exclusive_handler(PWM_IRQ_WRAP, interrupt_handler);
     irq_set_enabled(PWM_IRQ_WRAP, true);
-
-    // Configure the I2C Communication
-    i2c_init(i2c0, 400 * 1000);
-
-    gpio_set_function(4, GPIO_FUNC_I2C);
-    gpio_set_function(5, GPIO_FUNC_I2C);
-    gpio_pull_up(4);
-    gpio_pull_up(5);
 
     // Configure UART Communication
     uart_init(UART_ID, BAUD_RATE);
@@ -222,13 +230,18 @@ int main(void){
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
     
+    //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
     arm_escs();
-
     sleep_ms(500);
 
     ELRS_rx.begin();
-    
 
+    // Configure the I2C Communication
+    i2c_init(i2c0, 400 * 1000);
+    gpio_set_function(4, GPIO_FUNC_I2C);
+    gpio_set_function(5, GPIO_FUNC_I2C);
+    gpio_pull_up(4);
+    gpio_pull_up(5);
     /*
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c0);
     if (!bno.begin()) {
