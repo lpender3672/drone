@@ -6,6 +6,7 @@ add_executable(main
         crc8.cpp
         CrsfSerial.cpp
         motor.cpp
+        control.cpp
         )
 
 # pull in common dependencies and additional pwm hardware support
