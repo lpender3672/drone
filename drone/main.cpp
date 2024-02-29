@@ -237,10 +237,7 @@ int main(void){
     
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
 
-    if (!ELRS_rx.begin()) {
-        printf("Fatal: No ELRS detected");
-        while(1);
-    }
+    ELRS_rx.begin();
 
 
     arm_escs();
