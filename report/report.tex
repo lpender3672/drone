@@ -22,6 +22,62 @@
 \section{Introduction}
 
 % Aims, Objectives and context
+\section{Theory}
+
+The states of the drone are given as follows
+\begin{equation}
+    \mathbf{x} = \begin{bmatrix} \mathbf{r}_p \\ \boldsymbol{\alpha} \\ \mathbf{\dot{r}}_p \\  \boldsymbol{\omega}  \end{bmatrix}, \quad \mathbf{u} = \begin{bmatrix} \Omega_1^2 \\ \Omega_2^2 \\ \Omega_3^2 \\ \Omega_4^2 \end{bmatrix}
+\end{equation}
+
+\begin{align}
+    \mathbf{\dot{x}} &= \mathbf{Ax} + \mathbf{Bu} \\
+    \mathbf{y} &= \mathbf{Cx} + \mathbf{Du}
+\end{align}
+
+The drone transfer function is therefor given by
+\begin{equation}
+    \mathbf{G} = \mathbf{C} (s\mathbf{I} - \mathbf{A})^{-1} \mathbf{B} + \mathbf{D}
+\end{equation}
+The goal is to find a controller matrix K which gives the overall transfer function
+\begin{equation}
+    \mathbf{G}_{cl} = \mathbf{C} (s\mathbf{I} - \mathbf{A} + \mathbf{BK})^{-1} \mathbf{B} + \mathbf{D}
+\end{equation}
+
+
+The nonlinear state space model is given by
+\begin{equation}
+    \mathbf{\dot{x}} = \begin{bmatrix}
+        \mathbf{\dot{r}}_p \\
+        \boldsymbol{\omega} \\
+        \mathbf{\dot{r}}_p \\
+        \boldsymbol{\dot{\omega}}
+    \end{bmatrix} = \begin{bmatrix}
+        \mathbf{x}_1 \\
+        \mathbf{x}_2 \\
+        \mathbf{R}(\mathbf{f}_p + \mathbf{f}_b) / m - \mathbf{g} \\
+        \mathbf{I}^{-1} (\boldsymbol{\tau}_p - \boldsymbol{\omega} \times \mathbf{I} \boldsymbol{\omega})
+    \end{bmatrix}
+\end{equation}
+Where row 3 and 4 are the translational and rotational dynamics respectively.
+
+Where $\mathbf{R}$ is the rotation matrix from the body frame to the inertial frame,
+$\mathbf{f}_p$, $\boldsymbol{\tau}$ is the respective force and torque from the propellers in the body frame,
+\begin{equation}
+    \mathbf{f}_p = \sum{\mathbf{f}_i}
+\end{equation}
+\begin{equation}
+    \boldsymbol{\tau}_p = \sum{\boldsymbol{\tau}_i + \mathbf{r}_{Pi} \times (\mathbf{f}_i)}
+\end{equation}
+Where $\boldsymbol{\tau}_i$ is the torque from the $i$th propeller, and $\mathbf{r}_{Pi}$ is the position of the $i$th propeller from the center of mass.
+The drag body force is given by $\mathbf{f}_b$ is defined as follows:
+\begin{equation}
+    \mathbf{f}_b = -\frac{1}{2} C_D \rho (\mathbf{A}_r \mathbf{v}_r ) \mathbf{v}_r
+\end{equation}
+Where $\mathbf{v}_r$ is the velocity of the drone relative to the air, and $\rho$ is the air density.
+For a wind speed $\mathbf{v}_w$, the relative velocity is given by
+\begin{equation}
+    \mathbf{v}_r = \mathbf{\dot{r}}_p - \mathbf{v}_w
+\end{equation}
 
 \subsection{Aims}
 

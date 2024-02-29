@@ -58,7 +58,7 @@ void packetChannels()
       0,              \
       100);
 
-    escs[0].setSpeed(channel_1_data);
+    //escs[0].setSpeed(channel_1_data);
     
     // Y - Channel 2 - E
     channel_data = ELRS_rx.getChannel(2);
@@ -68,15 +68,20 @@ void packetChannels()
       0,              \
       100);
 
-    escs[1].setSpeed(channel_2_data);
+    //escs[1].setSpeed(channel_2_data);
     
     // Rx - Channel 3 - T
     channel_data = ELRS_rx.getChannel(3);
     channel_3_data = interp(channel_data, \
       CHANNEL_3_LOW_EP,          \
       CHANNEL_3_HIGH_EP,         \
-      JOYSTICK_LOW,              \
-      JOYSTICK_HIGH);
+      0,              \
+      100);
+
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(channel_3_data);
+    }
     
     // Ry - Channel 4 - R
     channel_data = ELRS_rx.getChannel(4);
@@ -231,10 +236,15 @@ int main(void){
     ELRS_rx.onOobData = &crsfOobData;
     
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
+
+    if (!ELRS_rx.begin()) {
+        printf("Fatal: No ELRS detected");
+        while(1);
+    }
+
+
     arm_escs();
     sleep_ms(500);
-
-    ELRS_rx.begin();
 
     // Configure the I2C Communication
     i2c_init(i2c0, 400 * 1000);
