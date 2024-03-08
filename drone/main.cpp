@@ -1,14 +1,18 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/pwm.h"
 #include "hardware/irq.h"
+#include "hardware/adc.h"
+#include "pico/multicore.h"
 
 #include <Eigen/Dense>
 #include "Adafruit_Sensor.h"
 #include "Adafruit_BNO055.h"
 #include "CrsfSerial.h"
 #include "motor.h"
+#include "control.h"
 
 
 #include "cal.h"
@@ -41,6 +45,8 @@ int channel_5_data;
 int channel_6_data;
 int channel_7_data;
 int channel_8_data;
+
+float battery_voltage;
 
 
 void packetChannels()
@@ -214,8 +220,13 @@ int main(void){
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
 
+    // configure ADC for battery voltage
+    adc_init();
+    adc_gpio_init(26);
+    adc_select_input(0); // ADC0 is GPIO26
+    const float ADC_conversion_factor = 3.3f / (1 << 12);
+
     // configure esc pin interrupts
-  
     irq_set_exclusive_handler(PWM_IRQ_WRAP, interrupt_handler);
     irq_set_enabled(PWM_IRQ_WRAP, true);
 
@@ -235,30 +246,28 @@ int main(void){
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
     
-    //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
-
-    ELRS_rx.begin();
-
-
-    arm_escs();
-    sleep_ms(500);
-
     // Configure the I2C Communication
-    i2c_init(i2c0, 400 * 1000);
-    gpio_set_function(4, GPIO_FUNC_I2C);
-    gpio_set_function(5, GPIO_FUNC_I2C);
-    gpio_pull_up(4);
-    gpio_pull_up(5);
-    /*
-    Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c0);
+    i2c_init(i2c1, 400 * 1000);
+    gpio_set_function(6, GPIO_FUNC_I2C);
+    gpio_set_function(7, GPIO_FUNC_I2C);
+    gpio_pull_up(6);
+    gpio_pull_up(7);
+    
+    Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
     if (!bno.begin()) {
         printf("Fatal: No BNO055 detected");
         while(1);
     }
-    */
+
+
+    ELRS_rx.begin();
+
+    arm_escs();
+    //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
+    sleep_ms(500);
+
     // Call accelerometer initialisation function
     
-
     /*
     int8_t temp = bno.getTemp();
     Eigen::Vector3f angles = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
@@ -266,11 +275,34 @@ int main(void){
     Eigen::Quaternionf quat = bno.getQuat();
     printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
     */
-
+    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint32_t last_loop_time, now, dt;
     // Infinite Loop
     while(1){
 
+      now = to_us_since_boot(get_absolute_time()) - loop_start_time;
+      dt = now - last_loop_time;
+      
+      if (false) // This needs to be done in a seperate thread as it takes too long even for interrupts
+      {
+        sensors_event_t orientationData , angVelocityData , linearAccelData, magnetometerData, accelerometerData, gravityData;
+        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+        bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+        bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+        //bno.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
+        //bno.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+        //bno.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
+
+        float roll = orientationData.orientation.x;
+        float pitch = orientationData.orientation.y;
+        float yaw = orientationData.orientation.z;
+      }
+      
       ELRS_rx.loop();
-        
+
+      uint16_t adc_voltage_reading = adc_read();
+      battery_voltage = adc_voltage_reading * ADC_conversion_factor;
+
+      last_loop_time = now;
     }
 }
