@@ -283,7 +283,7 @@ int main(void){
       now = to_us_since_boot(get_absolute_time()) - loop_start_time;
       dt = now - last_loop_time;
       
-      if (false) // This needs to be done in a seperate thread as it takes too long even for interrupts
+      if (true) // This needs to be done in a seperate thread as it takes too long even for interrupts
       {
         sensors_event_t orientationData , angVelocityData , linearAccelData, magnetometerData, accelerometerData, gravityData;
         bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
@@ -293,12 +293,12 @@ int main(void){
         //bno.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
         //bno.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
 
-        float roll = orientationData.orientation.x;
+        float roll = 180 + orientationData.orientation.z;
         float pitch = orientationData.orientation.y;
-        float yaw = orientationData.orientation.z;
+        float yaw = orientationData.orientation.x;
       }
       
-      ELRS_rx.loop();
+      //ELRS_rx.loop();
 
       uint16_t adc_voltage_reading = adc_read();
       battery_voltage = adc_voltage_reading * ADC_conversion_factor;
