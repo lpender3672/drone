@@ -199,6 +199,12 @@ void interrupt_handler() {
 
     irq = pwm_get_irq_status_mask();
 
+    int buzzer_slice = pwm_gpio_to_slice_num(14);
+    if (irq & (1<<buzzer_slice))
+    {
+        pwm_clear_irq(buzzer_slice);
+    }
+
     for (int i=0; i<4; i++)
     {
         slice = escs[i].get_slice();
@@ -216,9 +222,33 @@ void interrupt_handler() {
 int main(void){
     stdio_init_all(); // Initialise STD I/O for printing over serial
 
-    // Configure the LED Pin
+    // Configure the LED Pins
+    gpio_init(17);
+    gpio_set_dir(17, GPIO_OUT);
+    gpio_init(15);
+    gpio_set_dir(15, GPIO_OUT);
     gpio_init(25);
     gpio_set_dir(25, GPIO_OUT);
+
+    // turn on the LEDs
+    gpio_put(17, true);
+    gpio_put(15, true);
+
+    // initialise buzzer
+
+    int buzzer_pin = 14;
+    gpio_set_function(buzzer_pin, GPIO_FUNC_PWM);
+    int buzzer_slice = pwm_gpio_to_slice_num(14);
+    
+    pwm_clear_irq(buzzer_slice);
+    pwm_set_irq_enabled(buzzer_slice, true);
+    pwm_config config = pwm_get_default_config();
+    float clk_frac = 2 * 125 * 1e6 / 400; // 8kHz
+    pwm_config_set_clkdiv(&config, clk_frac);
+    pwm_init(buzzer_slice, &config, true);
+    pwm_set_wrap(buzzer_slice, 1000);
+
+    pwm_set_gpio_level(buzzer_pin, 500);
 
     // configure ADC for battery voltage
     adc_init();
