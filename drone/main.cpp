@@ -10,6 +10,7 @@
 #include <Eigen/Dense>
 #include "Adafruit_Sensor.h"
 #include "Adafruit_BNO055.h"
+#include "Adafruit_BMP280.h"
 #include "CrsfSerial.h"
 #include "motor.h"
 #include "control.h"
@@ -27,24 +28,31 @@
 
 #define ESC0_PIN 6
 
+#define DEVICES_FOUND 0xf5
+#define BNO055_NOT_FOUND 0xf6
+#define BMP280_NOT_FOUND 0xf7
+#define VL53L0X_NOT_FOUND 0xf8
 
 CrsfSerial ELRS_rx = CrsfSerial(uart0);
 
 ESC escs[4] = {ESC(8), ESC(10), ESC(22), ESC(28)};
 
 int channel_data;
-int map_data;
 
 bool light_flag = false;
 
-int channel_1_data;
-int channel_2_data;
-int channel_3_data;
-int channel_4_data;
-int channel_5_data;
-int channel_6_data;
-int channel_7_data;
-int channel_8_data;
+int roll_demand;
+int pitch_demand;
+int yaw_demand;
+int altitude_demand;
+int input_1;
+int input_2;
+int input_3;
+int input_4;
+
+float roll;
+float pitch;
+float yaw;
 
 float battery_voltage;
 
@@ -52,33 +60,29 @@ float battery_voltage;
 void packetChannels()
 {
 
-
-    light_flag = channel_1_data > 1000 ? true : false;
-    gpio_put(25, light_flag);
-
         // X - Channel 1 - A
     channel_data = ELRS_rx.getChannel(1);
-    channel_1_data = interp(channel_data, \
+    roll_demand = interp(channel_data, \
       CHANNEL_1_LOW_EP,          \
       CHANNEL_1_HIGH_EP,         \
-      0,              \
-      100);
+      -180,              \
+      180);
 
     //escs[0].setSpeed(channel_1_data);
     
     // Y - Channel 2 - E
     channel_data = ELRS_rx.getChannel(2);
-    channel_2_data = interp(channel_data, \
+    pitch_demand = interp(channel_data, \
       CHANNEL_2_LOW_EP,          \
       CHANNEL_2_HIGH_EP,         \
-      0,              \
-      100);
+      -180,              \
+      180);
 
     //escs[1].setSpeed(channel_2_data);
     
     // Rx - Channel 3 - T
     channel_data = ELRS_rx.getChannel(3);
-    channel_3_data = interp(channel_data, \
+    altitude_demand = interp(channel_data, \
       CHANNEL_3_LOW_EP,          \
       CHANNEL_3_HIGH_EP,         \
       0,              \
@@ -86,36 +90,41 @@ void packetChannels()
 
     for (int i=0; i<4; i++)
     {
-        escs[i].setSpeed(channel_3_data);
+        escs[i].setSpeed(altitude_demand);
     }
     
     // Ry - Channel 4 - R
     channel_data = ELRS_rx.getChannel(4);
-    map_data = interp(channel_data, \
+    yaw_demand = interp(channel_data, \
       CHANNEL_4_LOW_EP,          \
       CHANNEL_4_HIGH_EP,         \
-      JOYSTICK_LOW,              \
-      JOYSTICK_HIGH);
+      -180,              \
+      180);
 
     // Z - Channel 5
     channel_data = ELRS_rx.getChannel(5);
-    map_data = interp(channel_data, \
+    input_1 = interp(channel_data, \
       CHANNEL_5_LOW_EP,          \
       CHANNEL_5_HIGH_EP,         \
       JOYSTICK_LOW,              \
       JOYSTICK_HIGH);
+    
+    gpio_put(15, input_1 > 0);
+
 
     // Rz - Channel 6
     channel_data = ELRS_rx.getChannel(6);
-    map_data = interp(channel_data, \
+    input_2 = interp(channel_data, \
       CHANNEL_6_LOW_EP,          \
       CHANNEL_6_HIGH_EP,         \
       JOYSTICK_LOW,              \
       JOYSTICK_HIGH);
     
+    gpio_put(17, input_2 > 0);
+    
     // Rx - Channel 7
     channel_data = ELRS_rx.getChannel(7);
-    map_data = interp(channel_data, \
+    input_3 = interp(channel_data, \
       CHANNEL_7_LOW_EP,          \
       CHANNEL_7_HIGH_EP,         \
       JOYSTICK_LOW,              \
@@ -123,7 +132,7 @@ void packetChannels()
 
     // Rx - Channel 8
     channel_data = ELRS_rx.getChannel(8);
-    map_data = interp(channel_data, \
+    input_4 = interp(channel_data, \
       CHANNEL_8_LOW_EP,          \
       CHANNEL_8_HIGH_EP,         \
       JOYSTICK_LOW,              \
@@ -132,6 +141,7 @@ void packetChannels()
 }
 
 void crsfLinkUp() {
+
 
   //gpio_put(25, true);
 }
@@ -219,8 +229,64 @@ void interrupt_handler() {
     }
 }
 
+void core1_entry() {
+    // slower I2C setup on core 1
+
+    // Configure the I2C Communication
+    i2c_init(i2c1, 400 * 1000);
+    gpio_set_function(6, GPIO_FUNC_I2C);
+    gpio_set_function(7, GPIO_FUNC_I2C);
+    gpio_pull_up(6);
+    gpio_pull_up(7);
+    
+    Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
+    if (!bno.begin()) {
+        multicore_fifo_push_blocking(BNO055_NOT_FOUND);
+        while(1);
+    }
+
+    Adafruit_BMP280 bmp = Adafruit_BMP280(i2c1);
+    if (!bmp.begin()) {
+        //multicore_fifo_push_blocking(BMP280_NOT_FOUND);
+        //while(1);
+    }
+
+    multicore_fifo_push_blocking(DEVICES_FOUND);
+
+    while (1) {
+      sensors_event_t sensorData;
+      bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_EULER);
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GRAVITY);
+
+      sensors_event_t *sentData = &sensorData;
+
+      multicore_fifo_push_blocking((uint32_t)sentData);
+    }
+}
+
+
 int main(void){
     stdio_init_all(); // Initialise STD I/O for printing over serial
+
+    multicore_launch_core1(core1_entry); // Launch core 1 which does the slower I2C comms
+
+    uint32_t core1_status = multicore_fifo_pop_blocking();
+    switch (core1_status)
+    {
+        case BNO055_NOT_FOUND:
+            printf("BNO055 not found\n");
+            while (1) tight_loop_contents();
+        case DEVICES_FOUND:
+            printf("Devices found\n");
+            break;
+        default:
+            printf("Unknown status\n");
+            while (1) tight_loop_contents();
+    }
 
     // Configure the LED Pins
     gpio_init(17);
@@ -248,7 +314,7 @@ int main(void){
     pwm_init(buzzer_slice, &config, true);
     pwm_set_wrap(buzzer_slice, 1000);
 
-    pwm_set_gpio_level(buzzer_pin, 500);
+    //pwm_set_gpio_level(buzzer_pin, 500); // bzz
 
     // configure ADC for battery voltage
     adc_init();
@@ -276,21 +342,13 @@ int main(void){
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
     
-    // Configure the I2C Communication
-    i2c_init(i2c1, 400 * 1000);
-    gpio_set_function(6, GPIO_FUNC_I2C);
-    gpio_set_function(7, GPIO_FUNC_I2C);
-    gpio_pull_up(6);
-    gpio_pull_up(7);
-    
-    Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
-    if (!bno.begin()) {
-        printf("Fatal: No BNO055 detected");
-        while(1);
-    }
-
-
+    /*
     ELRS_rx.begin();
+    while (!ELRS_rx.isLinkUp()) {
+        ELRS_rx.loop();
+    }
+    */
+
 
     arm_escs();
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
@@ -305,33 +363,50 @@ int main(void){
     Eigen::Quaternionf quat = bno.getQuat();
     printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
     */
+
+    PID roll_pid(0.1, 0.0, 0.0, 1e3);
+    PID pitch_pid(0.1, 0.0, 0.0, 1e3);
+    PID yaw_pid(0.1, 0.0, 0.0, 1e3);
+    PID altitude_pid(0.1, 0.0, 0.0, 0.0);
+
+
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
-    uint32_t last_loop_time, now, dt;
+    uint32_t last_loop_time, now, dt; // us
+    uint32_t last_sensor_time, sensor_dt; // ms
     // Infinite Loop
     while(1){
 
       now = to_us_since_boot(get_absolute_time()) - loop_start_time;
-      dt = now - last_loop_time;
-      
-      if (true) // This needs to be done in a seperate thread as it takes too long even for interrupts
-      {
-        sensors_event_t orientationData , angVelocityData , linearAccelData, magnetometerData, accelerometerData, gravityData;
-        bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-        bno.getEvent(&angVelocityData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-        bno.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
-        //bno.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
-        //bno.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
-        //bno.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
+      dt = now - last_loop_time; // loop dt
 
-        float roll = 180 + orientationData.orientation.z;
-        float pitch = orientationData.orientation.y;
-        float yaw = orientationData.orientation.x;
+      if (multicore_fifo_rvalid()) { // TODO: make this a while loop and switch sensor types
+          sensors_event_t* receivedPtr = (sensors_event_t*)multicore_fifo_pop_blocking();
+          
+          roll = receivedPtr->orientation.x;
+          pitch = receivedPtr->orientation.y;
+          yaw = receivedPtr->orientation.z;
+
+          // update PID
+
+          sensor_dt = receivedPtr->timestamp - last_sensor_time;
+
+
+
+          last_sensor_time = receivedPtr->timestamp;
       }
       
-      //ELRS_rx.loop();
+      ELRS_rx.loop();
 
       uint16_t adc_voltage_reading = adc_read();
-      battery_voltage = adc_voltage_reading * ADC_conversion_factor;
+      battery_voltage = 4 * adc_voltage_reading * ADC_conversion_factor;
+
+      if (battery_voltage < 10) {
+        
+        for (int i=0; i<4; i++) {
+            escs[i].setSpeed(0);
+            escs[i].is_armed = false;
+        }
+      }
 
       last_loop_time = now;
     }

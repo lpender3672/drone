@@ -3,6 +3,7 @@
 add_executable(main
         main.cpp
         Adafruit_BNO055.cpp
+        Adafruit_BMP280.cpp
         crc8.cpp
         CrsfSerial.cpp
         motor.cpp
