@@ -7,11 +7,11 @@
 class PID
 {
     public:
-        PID(float Kp, float Ki, float Kd, float Qi);
-        float update(float error, float dt);
+        PID(double Kp, double Ki, double Kd, double Qi);
+        double update(double error, double dt);
         void reset();
     private:
-        float Kp, Ki, Kd, Qi;
-        float integral, prev_error;
+        double Kp, Ki, Kd, Qi;
+        double integral, prev_error;
 };
 

@@ -2,7 +2,7 @@
 
 
 
-PID::PID(float Kp, float Ki, float Kd, float Qi)
+PID::PID(double Kp, double Ki, double Kd, double Qi)
 {
     this->Kp = Kp;
     this->Ki = Ki;
@@ -13,10 +13,10 @@ PID::PID(float Kp, float Ki, float Kd, float Qi)
 }
 
 
-float PID::update(float error, float dt)
+double PID::update(double error, double dt)
 {
     integral += error * dt;
-    float derivative = (error - prev_error) / dt;
+    double derivative = (error - prev_error) / dt;
     prev_error = error;
     return Kp * error + Ki * integral + Kd * derivative;
 }

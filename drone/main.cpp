@@ -35,7 +35,7 @@
 
 CrsfSerial ELRS_rx = CrsfSerial(uart0);
 
-ESC escs[4] = {ESC(8), ESC(10), ESC(22), ESC(28)};
+ESC escs[4] = {ESC(8), ESC(10), ESC(28), ESC(22)};
 
 int channel_data;
 
@@ -44,18 +44,62 @@ bool light_flag = false;
 int roll_demand;
 int pitch_demand;
 int yaw_demand;
-int altitude_demand;
+int throttle;
 int input_1;
 int input_2;
 int input_3;
 int input_4;
 
-float roll;
-float pitch;
-float yaw;
+double roll;
+double pitch;
+double yaw;
 
-float battery_voltage;
+double battery_voltage;
 
+
+void arm_escs() {
+    sleep_ms(500);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(200);
+        escs[i].updateSpeed();
+    }
+    sleep_ms(500);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(0.0);
+        escs[i].updateSpeed();
+        escs[i].is_armed = true;
+    }
+}
+
+void set_escs(bool enabled) {
+  gpio_put(15, enabled);
+  for (int i=0; i<4; i++)
+  {
+      if (!enabled) {
+        escs[i].setSpeed(0.0);
+      }
+      escs[i].updateSpeed();
+      escs[i].is_armed = enabled;
+  }
+}
+
+void calibrate_escs() {
+    sleep_ms(500);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(400);
+        escs[i].updateSpeed();
+    }
+    sleep_ms(3100);
+    for (int i=0; i<4; i++)
+    {
+        escs[i].setSpeed(0.0);
+        escs[i].updateSpeed();
+        escs[i].is_armed = true;
+    }
+}
 
 void packetChannels()
 {
@@ -65,8 +109,8 @@ void packetChannels()
     roll_demand = interp(channel_data, \
       CHANNEL_1_LOW_EP,          \
       CHANNEL_1_HIGH_EP,         \
-      -180,              \
-      180);
+      -90,              \
+      90);
 
     //escs[0].setSpeed(channel_1_data);
     
@@ -75,31 +119,27 @@ void packetChannels()
     pitch_demand = interp(channel_data, \
       CHANNEL_2_LOW_EP,          \
       CHANNEL_2_HIGH_EP,         \
-      -180,              \
-      180);
+      -90,              \
+      90);
 
     //escs[1].setSpeed(channel_2_data);
     
     // Rx - Channel 3 - T
     channel_data = ELRS_rx.getChannel(3);
-    altitude_demand = interp(channel_data, \
+    throttle = interp(channel_data, \
       CHANNEL_3_LOW_EP,          \
       CHANNEL_3_HIGH_EP,         \
       0,              \
-      100);
+      500);
 
-    for (int i=0; i<4; i++)
-    {
-        escs[i].setSpeed(altitude_demand);
-    }
     
     // Ry - Channel 4 - R
     channel_data = ELRS_rx.getChannel(4);
     yaw_demand = interp(channel_data, \
       CHANNEL_4_LOW_EP,          \
       CHANNEL_4_HIGH_EP,         \
-      -180,              \
-      180);
+      -90,              \
+      90);
 
     // Z - Channel 5
     channel_data = ELRS_rx.getChannel(5);
@@ -109,8 +149,7 @@ void packetChannels()
       JOYSTICK_LOW,              \
       JOYSTICK_HIGH);
     
-    gpio_put(15, input_1 > 0);
-
+    //set_escs(input_1 > 0);
 
     // Rz - Channel 6
     channel_data = ELRS_rx.getChannel(6);
@@ -142,12 +181,11 @@ void packetChannels()
 
 void crsfLinkUp() {
 
-
   //gpio_put(25, true);
 }
 
 void crsfLinkDown() {
-
+  //set_escs(false);
   //gpio_put(25, false);
 }
 
@@ -166,39 +204,7 @@ static void passthroughBegin(uint32_t baud)
 
 static void crsfOobData(uint8_t b)
 {
-    printf("OOB: %02X\n", b);
-}
-
-void arm_escs() {
-    sleep_ms(500);
-    for (int i=0; i<4; i++)
-    {
-        escs[i].setSpeed(200);
-        escs[i].updateSpeed();
-    }
-    sleep_ms(500);
-    for (int i=0; i<4; i++)
-    {
-        escs[i].setSpeed(0.0);
-        escs[i].updateSpeed();
-        escs[i].is_armed = true;
-    }
-}
-
-void calibrate_escs() {
-    sleep_ms(500);
-    for (int i=0; i<4; i++)
-    {
-        escs[i].setSpeed(400);
-        escs[i].updateSpeed();
-    }
-    sleep_ms(3100);
-    for (int i=0; i<4; i++)
-    {
-        escs[i].setSpeed(0.0);
-        escs[i].updateSpeed();
-        escs[i].is_armed = true;
-    }
+    //printf("OOB: %02X\n", b);
 }
 
 void interrupt_handler() {
@@ -242,35 +248,42 @@ void core1_entry() {
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
     if (!bno.begin()) {
         multicore_fifo_push_blocking(BNO055_NOT_FOUND);
-        while(1);
+        while(1) tight_loop_contents();
     }
 
+    // set filter to 1000Hz
+    
+    
     Adafruit_BMP280 bmp = Adafruit_BMP280(i2c1);
-    if (!bmp.begin()) {
-        //multicore_fifo_push_blocking(BMP280_NOT_FOUND);
-        //while(1);
+    if (!bmp.begin(0x76, 0x60)) {
+        multicore_fifo_push_blocking(BMP280_NOT_FOUND);
+        while(1) tight_loop_contents();
     }
-
+    
     multicore_fifo_push_blocking(DEVICES_FOUND);
 
     while (1) {
-      sensors_event_t sensorData;
-      bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_EULER);
+      sensors_event_t orientationData, accelerationData;
+      bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+      bno.getEvent(&accelerationData, Adafruit_BNO055::VECTOR_LINEARACCEL);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GRAVITY);
 
-      sensors_event_t *sentData = &sensorData;
 
-      multicore_fifo_push_blocking((uint32_t)sentData);
+      multicore_fifo_push_blocking((uint32_t)(&orientationData));
+      multicore_fifo_push_blocking((uint32_t)(&accelerationData));
+
+      sleep_ms(10);
     }
 }
 
 
 int main(void){
     stdio_init_all(); // Initialise STD I/O for printing over serial
+
+    printf("Starting...\n");
 
     multicore_launch_core1(core1_entry); // Launch core 1 which does the slower I2C comms
 
@@ -279,6 +292,9 @@ int main(void){
     {
         case BNO055_NOT_FOUND:
             printf("BNO055 not found\n");
+            while (1) tight_loop_contents();
+        case BMP280_NOT_FOUND:
+            printf("BMP280 not found\n");
             while (1) tight_loop_contents();
         case DEVICES_FOUND:
             printf("Devices found\n");
@@ -342,13 +358,13 @@ int main(void){
     ELRS_rx.onLinkDown = &crsfLinkDown;
     ELRS_rx.onOobData = &crsfOobData;
     
-    /*
+    
     ELRS_rx.begin();
+    /*
     while (!ELRS_rx.isLinkUp()) {
         ELRS_rx.loop();
     }
     */
-
 
     arm_escs();
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
@@ -364,35 +380,72 @@ int main(void){
     printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
     */
 
-    PID roll_pid(0.1, 0.0, 0.0, 1e3);
+    PID roll_pid(2, 0, 0.075*6, 100);
     PID pitch_pid(0.1, 0.0, 0.0, 1e3);
     PID yaw_pid(0.1, 0.0, 0.0, 1e3);
     PID altitude_pid(0.1, 0.0, 0.0, 0.0);
 
 
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
-    uint32_t last_loop_time, now, dt; // us
-    uint32_t last_sensor_time, sensor_dt; // ms
+    uint32_t last_loop_time, now; // us
+    uint32_t last_orient_time = loop_start_time;
+    uint32_t last_accel_time = loop_start_time;
+    double dt, orient_dt, accel_dt; // us
     // Infinite Loop
     while(1){
 
       now = to_us_since_boot(get_absolute_time()) - loop_start_time;
-      dt = now - last_loop_time; // loop dt
+      dt = (now - last_loop_time) / 1e6; // loop dt
 
-      if (multicore_fifo_rvalid()) { // TODO: make this a while loop and switch sensor types
-          sensors_event_t* receivedPtr = (sensors_event_t*)multicore_fifo_pop_blocking();
-          
-          roll = receivedPtr->orientation.x;
-          pitch = receivedPtr->orientation.y;
-          yaw = receivedPtr->orientation.z;
+      if (multicore_fifo_rvalid()){
+          while (multicore_fifo_rvalid()) { // TODO: make this a while loop and switch sensor types
+            sensors_event_t* receivedPtr = (sensors_event_t*)multicore_fifo_pop_blocking();
 
+            switch (receivedPtr->type) {
+              case SENSOR_TYPE_ORIENTATION:
+                orient_dt = (receivedPtr->timestamp - last_orient_time) / 1e6;
+                last_orient_time = receivedPtr->timestamp;
+
+                // update orientation
+                roll = receivedPtr->orientation.z;
+                roll += (roll < 0) * 360 - 180; // convert to -180 180 range
+                pitch = receivedPtr->orientation.y;
+                yaw = receivedPtr->orientation.x;
+
+                printf("Orientation: dt: %f vector: Roll: %f, Pitch: %f, Yaw: %f\n", orient_dt, roll, pitch, yaw);
+                break;
+              case SENSOR_TYPE_LINEAR_ACCELERATION:
+                // update acceleration
+                accel_dt = (receivedPtr->timestamp - last_accel_time) / 1e6;
+                last_accel_time = receivedPtr->timestamp;
+
+                printf("Acceleration: dt: %f vector: %f, %f, %f\n", accel_dt, receivedPtr->acceleration.x, receivedPtr->acceleration.y, receivedPtr->acceleration.z);
+                break;
+              default:
+                break;
+            }
+          }
+          /*
           // update PID
+          double roll_input = roll_pid.update(roll - roll_demand, sensor_dt);
+          double pitch_input = 0; // pitch_pid.update(pitch - pitch_demand, sensor_dt);
+          double yaw_input = 0; // yaw_pid.update(yaw - yaw_demand, sensor_dt);
 
-          sensor_dt = receivedPtr->timestamp - last_sensor_time;
-
-
-
-          last_sensor_time = receivedPtr->timestamp;
+          // now update the escs
+          escs[0].setSpeed(
+            throttle + roll_input + yaw_input
+          );
+          escs[1].setSpeed(
+            throttle + pitch_input - yaw_input
+          );
+          escs[2].setSpeed(
+            throttle - pitch_input + yaw_input
+          );
+          escs[3].setSpeed(
+            throttle - roll_input - yaw_input
+          );
+          */
+          
       }
       
       ELRS_rx.loop();
@@ -400,12 +453,10 @@ int main(void){
       uint16_t adc_voltage_reading = adc_read();
       battery_voltage = 4 * adc_voltage_reading * ADC_conversion_factor;
 
-      if (battery_voltage < 10) {
+      if (battery_voltage < 8  && battery_voltage > 1) {
         
-        for (int i=0; i<4; i++) {
-            escs[i].setSpeed(0);
-            escs[i].is_armed = false;
-        }
+        set_escs(false);
+        while (1) tight_loop_contents();
       }
 
       last_loop_time = now;
