@@ -19,11 +19,12 @@ class SerialReader(QThread):
             if self.serial_port.in_waiting:
                 data = self.serial_port.readline().decode().strip().split(" ")
                 type = data[0].strip(":")
-                if not (type == "Orientation"):
+                if not ("states" in type):
                     continue
             
                 try:
-                    value = float(data[5].strip(","))
+                    print(data)
+                    value = float(data[6])
                     self.data_received.emit(value)
                 except (ValueError, IndexError):
                     pass

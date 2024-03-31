@@ -8,6 +8,7 @@ add_executable(main
         CrsfSerial.cpp
         motor.cpp
         control.cpp
+        observer.cpp
         )
 
 # pull in common dependencies and additional pwm hardware support

@@ -293,8 +293,8 @@ public:
   void getCalibration(uint8_t *system, uint8_t *gyro, uint8_t *accel,
                       uint8_t *mag);
 
-  Eigen::Vector3f getVector(adafruit_vector_type_t vector_type);
-  Eigen::Quaternionf getQuat();
+  Eigen::Vector3d getVector(adafruit_vector_type_t vector_type);
+  Eigen::Quaterniond getQuat();
   int8_t getTemp();
 
   /* Adafruit_Sensor implementation */

@@ -13,6 +13,7 @@
 #include "Adafruit_BMP280.h"
 #include "CrsfSerial.h"
 #include "motor.h"
+#include "observer.h"
 #include "control.h"
 
 
@@ -244,16 +245,35 @@ void core1_entry() {
     gpio_set_function(7, GPIO_FUNC_I2C);
     gpio_pull_up(6);
     gpio_pull_up(7);
-    
+
+
+    int n = 15;  // State dimension
+    int m = 6;   // Measurement dimension
+    int p = 6;   // Input dimension
+    EKF ekf(n, m, p);
+    Eigen::VectorXd x0(n);
+    x0 << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0;  // Initial state vector
+    Eigen::MatrixXd P0(n, n);
+    P0.setIdentity();
+    P0 *= 1e-5;  // Initial covariance matrix
+    ekf.initialize(x0, P0);
+
+    ekf.acc_white_noise_ = 1e-4;
+    ekf.acc_bias_instability_ = 6e-4;
+    ekf.acc_rate_random_walk_ = 1.2e-4;
+    ekf.gyro_white_noise_ = 1e-4;
+    ekf.gyro_bias_instability_ = 1e-3;
+    ekf.gyro_rate_random_walk_ = 1e-2;
+
+
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
     if (!bno.begin()) {
         multicore_fifo_push_blocking(BNO055_NOT_FOUND);
         while(1) tight_loop_contents();
     }
+    bno.setMode(OPERATION_MODE_NDOF);
 
-    // set filter to 1000Hz
-    
-    
+
     Adafruit_BMP280 bmp = Adafruit_BMP280(i2c1);
     if (!bmp.begin(0x76, 0x60)) {
         multicore_fifo_push_blocking(BMP280_NOT_FOUND);
@@ -262,18 +282,42 @@ void core1_entry() {
     
     multicore_fifo_push_blocking(DEVICES_FOUND);
 
+    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint32_t last_loop_time, now; // us
+    double dt; // s
+
     while (1) {
-      sensors_event_t orientationData, accelerationData;
-      bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+      sensors_event_t accelerationData;
       bno.getEvent(&accelerationData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+      Eigen::Vector3d acceleration(accelerationData.acceleration.x, accelerationData.acceleration.y, accelerationData.acceleration.z);
+      Eigen::Quaterniond orientation = bno.getQuat();
+
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GRAVITY);
 
+      double altitude = bmp.readAltitude(1013.25); // in hPa
 
-      multicore_fifo_push_blocking((uint32_t)(&orientationData));
-      multicore_fifo_push_blocking((uint32_t)(&accelerationData));
+      // finished reading 
+      now = to_us_since_boot(get_absolute_time());
+      dt = (now - last_loop_time) / 1e6; // s
+
+      // Perform prediction step
+      ekf.predict(acceleration, orientation, dt);
+
+      // Get other sensor measurements (if available)
+      Eigen::VectorXd z(m);
+      // ... (Retrieve other sensor measurements)
+
+      // Perform update step
+      ekf.update(z);
+
+      Eigen::VectorXd gotState = ekf.getState(); // 3 position, 4 quaternion
+      // convert to double array
+      multicore_fifo_push_blocking((uint32_t)(&gotState));
+
+      last_loop_time = now;
 
       sleep_ms(10);
     }
@@ -370,27 +414,11 @@ int main(void){
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
     sleep_ms(500);
 
-    // Call accelerometer initialisation function
-    
-    /*
-    int8_t temp = bno.getTemp();
-    Eigen::Vector3f angles = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    printf("Euler: %f, %f, %f\n", angles.x(), angles.y(), angles.z());
-    Eigen::Quaternionf quat = bno.getQuat();
-    printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
-    */
-
-    PID roll_pid(2, 0, 0.075*6, 100);
-    PID pitch_pid(0.1, 0.0, 0.0, 1e3);
-    PID yaw_pid(0.1, 0.0, 0.0, 1e3);
-    PID altitude_pid(0.1, 0.0, 0.0, 0.0);
-
 
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
     uint32_t last_loop_time, now; // us
-    uint32_t last_orient_time = loop_start_time;
-    uint32_t last_accel_time = loop_start_time;
-    double dt, orient_dt, accel_dt; // us
+    uint32_t last_state_time = loop_start_time;
+    double dt, state_dt; // us
     // Infinite Loop
     while(1){
 
@@ -398,38 +426,19 @@ int main(void){
       dt = (now - last_loop_time) / 1e6; // loop dt
 
       if (multicore_fifo_rvalid()){
-          while (multicore_fifo_rvalid()) { // TODO: make this a while loop and switch sensor types
-            sensors_event_t* receivedPtr = (sensors_event_t*)multicore_fifo_pop_blocking();
+          Eigen::VectorXd* receivedPtr = (Eigen::VectorXd*)multicore_fifo_pop_blocking();
+          Eigen::Map<Eigen::VectorXd> receivedStates(receivedPtr->data(), 7);
 
-            switch (receivedPtr->type) {
-              case SENSOR_TYPE_ORIENTATION:
-                orient_dt = (receivedPtr->timestamp - last_orient_time) / 1e6;
-                last_orient_time = receivedPtr->timestamp;
+          state_dt = (now - last_state_time) / 1e6; // state dt
 
-                // update orientation
-                roll = receivedPtr->orientation.z;
-                roll += (roll < 0) * 360 - 180; // convert to -180 180 range
-                pitch = receivedPtr->orientation.y;
-                yaw = receivedPtr->orientation.x;
-
-                printf("Orientation: dt: %f vector: Roll: %f, Pitch: %f, Yaw: %f\n", orient_dt, roll, pitch, yaw);
-                break;
-              case SENSOR_TYPE_LINEAR_ACCELERATION:
-                // update acceleration
-                accel_dt = (receivedPtr->timestamp - last_accel_time) / 1e6;
-                last_accel_time = receivedPtr->timestamp;
-
-                printf("Acceleration: dt: %f vector: %f, %f, %f\n", accel_dt, receivedPtr->acceleration.x, receivedPtr->acceleration.y, receivedPtr->acceleration.z);
-                break;
-              default:
-                break;
-            }
+          printf("states ");
+          for (int i = 0; i < 7; i++) {
+            printf(" %f", receivedStates[i]);
           }
+          printf("\n");
           /*
-          // update PID
-          double roll_input = roll_pid.update(roll - roll_demand, sensor_dt);
-          double pitch_input = 0; // pitch_pid.update(pitch - pitch_demand, sensor_dt);
-          double yaw_input = 0; // yaw_pid.update(yaw - yaw_demand, sensor_dt);
+          // update SS
+
 
           // now update the escs
           escs[0].setSpeed(
@@ -445,7 +454,7 @@ int main(void){
             throttle - roll_input - yaw_input
           );
           */
-          
+          last_state_time = now;
       }
       
       ELRS_rx.loop();
@@ -453,7 +462,7 @@ int main(void){
       uint16_t adc_voltage_reading = adc_read();
       battery_voltage = 4 * adc_voltage_reading * ADC_conversion_factor;
 
-      if (battery_voltage < 8  && battery_voltage > 1) {
+      if (battery_voltage < 10  && battery_voltage > 1) {
         
         set_escs(false);
         while (1) tight_loop_contents();
