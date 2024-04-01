@@ -1,6 +1,10 @@
 
 
 load 6ax_raw.mat
+dt_values = raw(2:end, 1) - raw(1:end-1, 1);
+mean_Fs = 1 / mean(dt_values);
+mean_Fs
+
 accx = raw(:, 2);
 accx = accx - mean(accx);
 accy = raw(:, 3);
@@ -12,14 +16,16 @@ eulz = raw(:, 7);
 
 load parsed_isolated_marble_data_az
 
-opt_NBK_axis(accx, "X");
+%% opt_NBK_axis(accx, mean_Fs, "X");
+%% opt_NBK_axis(accy, mean_Fs, "Y");
+opt_NBK_axis(accz, mean_Fs, "Z");
 
 
 
 %% setup to compute AV and ASD
-function []=opt_NBK_axis(sampled_axis, axis_name)
+function []=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
     L = length(sampled_axis);        % Length of the data set.
-    Fs = 100;                 % IMU sampling rate = 100Hz
+    Fs = sample_freq;                 % IMU sampling rate = 100Hz
     T = 1/Fs;                 % time difference
     data.freq = sampled_axis;        % computing allan variance plot
     data.rate = Fs;

@@ -38,6 +38,17 @@ int main(void){
     gpio_put(17, true);
     gpio_put(15, true);
 
+    int buzzer_pin = 14;
+    gpio_set_function(buzzer_pin, GPIO_FUNC_PWM);
+    int buzzer_slice = pwm_gpio_to_slice_num(14);
+    
+    pwm_clear_irq(buzzer_slice);
+    pwm_set_irq_enabled(buzzer_slice, true);
+    pwm_config config = pwm_get_default_config();
+    float clk_frac = 2 * 125 * 1e6 / 400; // 8kHz
+    pwm_config_set_clkdiv(&config, clk_frac);
+    pwm_init(buzzer_slice, &config, true);
+    pwm_set_wrap(buzzer_slice, 1000);
 
     // Configure the I2C Communication
     i2c_init(i2c1, 400 * 1000);
@@ -46,6 +57,9 @@ int main(void){
     gpio_pull_up(6);
     gpio_pull_up(7);
 
+    pwm_set_gpio_level(buzzer_pin, 500);
+    sleep_ms(500);
+    pwm_set_gpio_level(buzzer_pin, 0);
 
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
     if (!bno.begin()) {
@@ -54,6 +68,17 @@ int main(void){
     }
     bno.setMode(OPERATION_MODE_NDOF);
 
+    uint8_t sys, gyro, accel, mag = 0;
+    while (sys < 3 || gyro < 3 || accel < 3 || mag < 3) {
+        bno.getCalibration(&sys, &gyro, &accel, &mag);
+        printf("Calibration: Sys=%d Gyro=%d Accel=%d Mag=%d\n", sys, gyro, accel, mag);
+        gpio_put(25, !gpio_get(25));
+        sleep_ms(100);
+    }
+
+    pwm_set_gpio_level(buzzer_pin, 500);
+    sleep_ms(500);
+    pwm_set_gpio_level(buzzer_pin, 0);
 
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
     uint32_t last_loop_time, now; // us

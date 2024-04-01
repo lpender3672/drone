@@ -1,5 +1,4 @@
 import serial
-import time
 import numpy as np
 import scipy.io as sio
 
@@ -8,7 +7,8 @@ class SerialReader:
         self.serial_port = serial.Serial(port, baud_rate)
         self.serial_port.flushInput()
 
-        self.data = np.zeros((0, 7))
+        self.data = np.zeros((0, 7)) # time, ax, ay, az, gx, gy, gz
+
         self.max_time = max_time
         self.save_folder = save_folder
 
@@ -22,7 +22,7 @@ class SerialReader:
                     data = np.array(data.split(" "), dtype=float)
                     self.data = np.append(self.data, [data], axis=0)
                 except (ValueError, IndexError):
-                    print("Error in reading data point")
+                    print("Error in reading data point; ", data)
                     continue
                 else :
                     if (self.data[-1,0] - self.data[0,0]) > self.max_time:
@@ -33,7 +33,7 @@ class SerialReader:
 if __name__ == "__main__":
     reader = SerialReader("COM5", 
                           115200, 
-                          max_time=600, 
+                          max_time=10 * 3600, 
                           save_folder="tuning/AV Matlab_SW/")
+    
     reader.run()
-                

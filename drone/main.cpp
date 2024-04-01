@@ -29,6 +29,7 @@
 
 #define ESC0_PIN 6
 
+#define CALIBRATION_DONE 0xf3
 #define DEVICES_FOUND 0xf5
 #define BNO055_NOT_FOUND 0xf6
 #define BMP280_NOT_FOUND 0xf7
@@ -282,6 +283,22 @@ void core1_entry() {
     
     multicore_fifo_push_blocking(DEVICES_FOUND);
 
+
+    // get calibration 
+    uint8_t sys, gyro, accel, mag = 0;
+    while (sys < 3 || gyro < 3 || accel < 3 || mag < 3) {
+        bno.getCalibration(&sys, &gyro, &accel, &mag);
+        printf("Calibration: Sys=%d Gyro=%d Accel=%d Mag=%d\n", sys, gyro, accel, mag);
+        sleep_ms(100);
+    }
+    // it is actually possible to save the calibration data to flash on the pico but it is not implemented here
+    /*
+    adafruit_bno055_offsets_t bno_offsets;
+    bno.getSensorOffsets(bno_offsets);    
+    */
+
+    multicore_fifo_push_blocking(CALIBRATION_DONE);
+
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
     uint32_t last_loop_time, now; // us
     double dt; // s
@@ -410,10 +427,15 @@ int main(void){
     }
     */
 
+    while (!multicore_fifo_rvalid()) {
+        sleep_ms(100);
+        gpio_put(25, !gpio_get(25));
+    }
+    multicore_fifo_pop_blocking();
+
     arm_escs();
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
     sleep_ms(500);
-
 
     uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
     uint32_t last_loop_time, now; // us
