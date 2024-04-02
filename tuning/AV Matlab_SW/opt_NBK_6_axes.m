@@ -1,7 +1,7 @@
 
 
 load 6ax_raw.mat
-dt_values = raw(2:end, 1) - raw(1:end-1, 1);
+dt_values = raw(2:1001, 1) - raw(1:1000, 1);
 mean_Fs = 1 / mean(dt_values);
 mean_Fs
 
@@ -16,9 +16,9 @@ eulz = raw(:, 7);
 
 load parsed_isolated_marble_data_az
 
-%% opt_NBK_axis(accx, mean_Fs, "X");
+opt_NBK_axis(accx, mean_Fs, "X");
 %% opt_NBK_axis(accy, mean_Fs, "Y");
-opt_NBK_axis(accz, mean_Fs, "Z");
+%% opt_NBK_axis(accz, mean_Fs, "Z");
 
 
 

@@ -80,15 +80,15 @@ int main(void){
     sleep_ms(500);
     pwm_set_gpio_level(buzzer_pin, 0);
 
-    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint32_t loop_start_time = to_ms_since_boot(get_absolute_time());
     uint32_t last_loop_time, now; // us
     uint32_t last_state_time = loop_start_time;
     double dt, state_dt; // us
     // Infinite Loop
     while(1){
 
-      now = to_us_since_boot(get_absolute_time()) - loop_start_time;
-      dt = (now - last_loop_time) / 1e6; // loop dt
+      now = to_ms_since_boot(get_absolute_time()) - loop_start_time;
+      dt = (now - last_loop_time) / 1e3; // loop dt
 
       // read bno 
       Eigen::Quaterniond orientation = bno.getQuat();
@@ -100,7 +100,7 @@ int main(void){
 
       // print to ser 
       printf("%f %f %f %f %f %f %f\n",
-        now / 1e6,
+        now / 1e3,
         acceleration.x(), 
         acceleration.y(), 
         acceleration.z(),
