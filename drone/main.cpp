@@ -251,20 +251,15 @@ void core1_entry() {
     int n = 15;  // State dimension
     int m = 6;   // Measurement dimension
     int p = 6;   // Input dimension
-    EKF ekf(n, m, p);
-    Eigen::VectorXd x0(n);
-    x0 << 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0;  // Initial state vector
-    Eigen::MatrixXd P0(n, n);
-    P0.setIdentity();
-    P0 *= 1e-5;  // Initial covariance matrix
-    ekf.initialize(x0, P0);
+    
+    Eigen::Vector3f av_sbsnsk_x(2.3849777e-08, 8.10145792e-08, -6.192712e-09);
+    Eigen::Vector3f asd_nk_x(9.00080991772e-04, 7.8693783931e-08, 0);
+    Eigen::Vector3f av_sbsnsk_y(3.307765e-08, 1.212550812e-07, -8.316799e-09);
+    Eigen::Vector3f asd_nk_y(1.101158849699e-03, 9.1196484605e-08, 0);
+    Eigen::Vector3f av_sbsnsk_z(4.8680079e-08, 2.249460173e-07, -1.3556376e-08);
+    Eigen::Vector3f asd_nk_z(1.499820046923e-03, 1.16431850147e-07, 0);
 
-    ekf.acc_white_noise_ = 1e-4;
-    ekf.acc_bias_instability_ = 6e-4;
-    ekf.acc_rate_random_walk_ = 1.2e-4;
-    ekf.gyro_white_noise_ = 1e-4;
-    ekf.gyro_bias_instability_ = 1e-3;
-    ekf.gyro_rate_random_walk_ = 1e-2;
+    EKF ekf(1/83.56, av_sbsnsk_x, av_sbsnsk_y, av_sbsnsk_z, asd_nk_x, asd_nk_y, asd_nk_z);
 
 
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
@@ -284,59 +279,66 @@ void core1_entry() {
     multicore_fifo_push_blocking(DEVICES_FOUND);
 
 
-    // get calibration 
+    // get calibration
+    /*
     uint8_t sys, gyro, accel, mag = 0;
     while (sys < 3 || gyro < 3 || accel < 3 || mag < 3) {
         bno.getCalibration(&sys, &gyro, &accel, &mag);
         printf("Calibration: Sys=%d Gyro=%d Accel=%d Mag=%d\n", sys, gyro, accel, mag);
         sleep_ms(100);
     }
+    */
     // it is actually possible to save the calibration data to flash on the pico but it is not implemented here
     /*
     adafruit_bno055_offsets_t bno_offsets;
     bno.getSensorOffsets(bno_offsets);    
     */
-
+    sleep_ms(1000);
     multicore_fifo_push_blocking(CALIBRATION_DONE);
 
-    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
-    uint32_t last_loop_time, now; // us
+    uint64_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint64_t last_loop_time, now; // us
     double dt; // s
 
     while (1) {
-      sensors_event_t accelerationData;
-      bno.getEvent(&accelerationData, Adafruit_BNO055::VECTOR_LINEARACCEL);
-      Eigen::Vector3d acceleration(accelerationData.acceleration.x, accelerationData.acceleration.y, accelerationData.acceleration.z);
-      Eigen::Quaterniond orientation = bno.getQuat();
 
+      // read
+      sensors_event_t accelerationData, orientationData;
+      bno.getEvent(&accelerationData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+      //bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+      //Eigen::Vector3d acceleration(accelerationData.acceleration.x, accelerationData.acceleration.y, accelerationData.acceleration.z);
+      Eigen::Quaternionf orientation = bno.getQuat();
+
+      Eigen::Matrix<float, 3, 1> acceleration;
+      acceleration <<  accelerationData.acceleration.x, 
+            accelerationData.acceleration.y, 
+            accelerationData.acceleration.z;
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GRAVITY);
-
       double altitude = bmp.readAltitude(1013.25); // in hPa
 
-      // finished reading 
+      // finished reading
+
       now = to_us_since_boot(get_absolute_time());
       dt = (now - last_loop_time) / 1e6; // s
-
-      // Perform prediction step
+      last_loop_time = now;
       ekf.predict(acceleration, orientation, dt);
 
-      // Get other sensor measurements (if available)
-      Eigen::VectorXd z(m);
-      // ... (Retrieve other sensor measurements)
+      Eigen::Matrix<float, 3, 1> z;
+      z << acceleration;
+      ekf.update(acceleration, orientation);
 
-      // Perform update step
-      ekf.update(z);
 
-      Eigen::VectorXd gotState = ekf.getState(); // 3 position, 4 quaternion
+      Eigen::VectorXf gotState = ekf.getStateEstimate(); // 3 position, 4 quaternion
       // convert to double array
       multicore_fifo_push_blocking((uint32_t)(&gotState));
 
-      last_loop_time = now;
-
-      sleep_ms(10);
+      
+      if (dt*1e3 < 10) {
+        sleep_us(10*1e3 - dt*1e3);
+      }
     }
 }
 
@@ -437,9 +439,9 @@ int main(void){
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
     sleep_ms(500);
 
-    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
-    uint32_t last_loop_time, now; // us
-    uint32_t last_state_time = loop_start_time;
+    uint64_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint64_t last_loop_time, now; // us
+    uint64_t last_state_time = loop_start_time;
     double dt, state_dt; // us
     // Infinite Loop
     while(1){
@@ -449,12 +451,13 @@ int main(void){
 
       if (multicore_fifo_rvalid()){
           Eigen::VectorXd* receivedPtr = (Eigen::VectorXd*)multicore_fifo_pop_blocking();
-          Eigen::Map<Eigen::VectorXd> receivedStates(receivedPtr->data(), 7);
+          Eigen::Map<Eigen::VectorXd> receivedStates(receivedPtr->data(), 15);
 
           state_dt = (now - last_state_time) / 1e6; // state dt
 
           printf("states ");
-          for (int i = 0; i < 7; i++) {
+          printf("%f", state_dt);
+          for (int i = 0; i < 15; i++) {
             printf(" %f", receivedStates[i]);
           }
           printf("\n");

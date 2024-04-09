@@ -91,12 +91,12 @@ int main(void){
       dt = (now - last_loop_time) / 1e3; // loop dt
 
       // read bno 
-      Eigen::Quaterniond orientation = bno.getQuat();
-      Eigen::Vector3d acceleration = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
+      Eigen::Quaternionf orientation = bno.getQuat();
+      Eigen::Vector3f acceleration = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
 
       
       // convert quaternion to euler
-      Eigen::Vector3d euler = orientation.toRotationMatrix().eulerAngles(0, 1, 2);
+      Eigen::Vector3f euler = orientation.toRotationMatrix().eulerAngles(0, 1, 2);
 
       // print to ser 
       printf("%f %f %f %f %f %f %f\n",

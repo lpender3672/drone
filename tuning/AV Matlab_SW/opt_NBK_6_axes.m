@@ -1,6 +1,7 @@
 
 
 load 6ax_raw.mat
+t_array = raw(:, 1);
 dt_values = raw(2:1001, 1) - raw(1:1000, 1);
 mean_Fs = 1 / mean(dt_values);
 mean_Fs
@@ -16,14 +17,17 @@ eulz = raw(:, 7);
 
 load parsed_isolated_marble_data_az
 
-opt_NBK_axis(accx, mean_Fs, "X");
-%% opt_NBK_axis(accy, mean_Fs, "Y");
-%% opt_NBK_axis(accz, mean_Fs, "Z");
+% plot accx
+% plot(t_array, accx) 
+
+%%opt_NBK_axis(accx, mean_Fs, "X");
+%%opt_NBK_axis(accy, mean_Fs, "Y");
+opt_NBK_axis(accz, mean_Fs, "Z");
 
 
 
 %% setup to compute AV and ASD
-function []=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
+function [theta_v, theta_o]=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
     L = length(sampled_axis);        % Length of the data set.
     Fs = sample_freq;                 % IMU sampling rate = 100Hz
     T = 1/Fs;                 % time difference
@@ -52,9 +56,9 @@ function []=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
 
     T_B = 20;                % correlation time [sec]
     % mu_B = 1/T_B;          % time constant parameter [Hz]
-    N = 3.3e-3;              % random walk parameter [m/sec^(3/2)]
-    K = 1.4e-4;              % rate random walk parameter [m/sec^(5/2)]
-    B = 4e-4;                % Bias instability parameter [m/sec^2]
+    N = 0.08;              % random walk parameter [m/sec^(3/2)]
+    K = 2;              % rate random walk parameter [m/sec^(5/2)]
+    B = 0.8;                % Bias instability parameter [m/sec^2]
     
     S_N = N^2;                                  % IEEE CSM eq. (22)
     S_K = K^2;                                  % IEEE CSM eq. (25)
@@ -88,11 +92,11 @@ function []=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
         if Cost_c < Cost_d
             b = d;
             Cost_b = Cost_d;
-            plot_AV_mdl_components(tau,av,theta_c,er)
+            % plot_AV_mdl_components(tau,av,theta_c,er)
         else
             a = c;
             Cost_a = Cost_c
-            plot_AV_mdl_components(tau,av,theta_d,er)
+            % plot_AV_mdl_components(tau,av,theta_d,er)
         end
         pause_time = 1.0;   % seconds
         pause(pause_time)

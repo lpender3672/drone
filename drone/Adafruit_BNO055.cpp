@@ -387,8 +387,8 @@ int8_t Adafruit_BNO055::getTemp() {
  *            VECTOR_GRAVITY]
  *  @return  vector from specified source
  */
-Eigen::Vector3d Adafruit_BNO055::getVector(adafruit_vector_type_t vector_type) {
-  Eigen::Vector3d xyz;
+Eigen::Vector3f Adafruit_BNO055::getVector(adafruit_vector_type_t vector_type) {
+  Eigen::Vector3f xyz;
   uint8_t buffer[6];
   memset(buffer, 0, 6);
 
@@ -452,7 +452,7 @@ Eigen::Vector3d Adafruit_BNO055::getVector(adafruit_vector_type_t vector_type) {
  *  @brief  Gets a quaternion reading from the specified source
  *  @return quaternion reading
  */
-Eigen::Quaterniond Adafruit_BNO055::getQuat() {
+Eigen::Quaternionf Adafruit_BNO055::getQuat() {
   uint8_t buffer[8];
   memset(buffer, 0, 8);
 
@@ -473,7 +473,7 @@ Eigen::Quaterniond Adafruit_BNO055::getQuat() {
    * 3.6.5.5 Orientation (Quaternion)
    */
   const double scale = (1.0 / (1 << 14));
-  Eigen::Quaterniond quat(scale * w, scale * x, scale * y, scale * z);
+  Eigen::Quaternionf quat(scale * w, scale * x, scale * y, scale * z);
   return quat;
 }
 
@@ -514,7 +514,7 @@ bool Adafruit_BNO055::getEvent(sensors_event_t *event) {
   event->timestamp = to_us_since_boot(get_absolute_time());
 
   /* Get a Euler angle sample for orientation */
-  Eigen::Vector3d euler = getVector(Adafruit_BNO055::VECTOR_EULER);
+  Eigen::Vector3f euler = getVector(Adafruit_BNO055::VECTOR_EULER);
   event->orientation.x = euler.x();
   event->orientation.y = euler.y();
   event->orientation.z = euler.z();
@@ -540,7 +540,7 @@ bool Adafruit_BNO055::getEvent(sensors_event_t *event,
   event->timestamp = to_us_since_boot(get_absolute_time());
 
   // read the data according to vec_type
-  Eigen::Vector3d vec;
+  Eigen::Vector3f vec;
   if (vec_type == Adafruit_BNO055::VECTOR_LINEARACCEL) {
     event->type = SENSOR_TYPE_LINEAR_ACCELERATION;
     vec = getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);

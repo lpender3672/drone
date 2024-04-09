@@ -2,111 +2,80 @@
 #include "observer.h"
 
 
-Eigen::Matrix3d skew_symmetric(const Eigen::Vector3d& v) {
-    Eigen::Matrix3d m;
-    m <<     0, -v(2),  v(1),
-          v(2),     0, -v(0),
-         -v(1),  v(0),     0;
-    return m;
-}
 
-EKF::EKF(int n, int m, int p) : n_(n), m_(m), p_(p),
-    x_(n), P_(n, n), Q_(n, n), R_(m, m), F_(n, n), H_(m, n),
-    bias_(n), bias_instability_(n), noise_(n), scale_factor_(6), misalignment_(3, 3),
-    acc_white_noise_(0.0), acc_bias_instability_(0.0), acc_rate_random_walk_(0.0),
-    gyro_white_noise_(0.0), gyro_bias_instability_(0.0), gyro_rate_random_walk_(0.0)
+EKF::EKF(float dt, const Eigen::Vector3f& av_sbsnsk_x, const Eigen::Vector3f& av_sbsnsk_y, const Eigen::Vector3f& av_sbsnsk_z,
+         const Eigen::Vector3f& asd_nk_x, const Eigen::Vector3f& asd_nk_y, const Eigen::Vector3f& asd_nk_z)
+    : dt_(dt), Q_(Eigen::Matrix<float, 15, 15>::Zero()), R_(Eigen::Matrix<float, 7, 7>::Identity())
 {
-    // Initialize matrices and vectors
+    // Initialize the process noise covariance matrix (Q)
+    Q_.block<3, 3>(6, 6) = av_sbsnsk_x.asDiagonal();
+    Q_.block<3, 3>(9, 9) = av_sbsnsk_y.asDiagonal();
+    Q_.block<3, 3>(12, 12) = av_sbsnsk_z.asDiagonal();
+    
+    // Add random walk noise to the process noise covariance matrix (Q)
+    Q_.block<3, 3>(3, 3) = (asd_nk_x.array() * dt_).matrix().asDiagonal();
+    Q_.block<3, 3>(6, 6) += (asd_nk_y.array() * dt_).matrix().asDiagonal();
+    Q_.block<3, 3>(9, 9) += (asd_nk_z.array() * dt_).matrix().asDiagonal();
+    
+    // Initialize the state transition matrix (F)
+    F_.setIdentity();
+    
+    // Initialize the observation matrix (H)
+    H_.setZero();
+    H_.bottomLeftCorner<7, 7>().setIdentity();
+    
+    // Initialize the state estimate (x) and covariance matrix (P)
     x_.setZero();
     P_.setIdentity();
-    Q_.setZero();
-    R_.setZero();
-    F_.setIdentity();
-    H_.setZero();
-    bias_.setZero();
-    bias_instability_.setZero();
-    noise_.setZero();
-    scale_factor_.setOnes();
-    misalignment_.setIdentity();
 }
 
-EKF::~EKF() {}
 
-void EKF::initialize(const Eigen::VectorXd& x0, const Eigen::MatrixXd& P0) {
-    x_ = x0;
-    P_ = P0;
-}
+void EKF::predict(const Eigen::Vector3f& acc_meas, const Eigen::Quaternionf& q_meas, float current_dt) {
+    // Extract orientation quaternion from the state vector
+    Eigen::Quaternionf q(x_.segment<4>(6));
 
-void EKF::predict(const Eigen::Vector3d& acc_meas, const Eigen::Quaterniond& q_meas, double dt) {
-    // Update error model
-    updateErrorModel(dt);
+    // Update orientation quaternion with the measured quaternion
+    q = q_meas;
+    x_.segment<4>(6) << q.w(), q.x(), q.y(), q.z();
 
-    // Perform prediction step
-    x_.head<3>() += x_.segment<3>(3) * dt + 0.5 * acc_meas * dt * dt;  // Update position
-    x_.segment<3>(3) += acc_meas * dt;  // Update velocity
+    // Rotate accelerometer measurements from body frame to navigation frame
+    Eigen::Vector3f acc_nav = q * (acc_meas - x_.segment<3>(9));
 
-    // Update orientation using the quaternion measurement
-    Eigen::Quaterniond q_est(x_(6), x_(7), x_(8), x_(9));
-    Eigen::Quaterniond q_update = q_meas * q_est.conjugate();
-    q_update.normalize();
-    x_.segment<4>(6) = (q_est * q_update).coeffs();
+    // Remove gravity from the accelerometer measurements
+    acc_nav -= Eigen::Vector3f(0, 0, 9.81);
 
+    // Integrate accelerometer measurements to update velocity
+    x_.segment<3>(3) += acc_nav * current_dt;
+
+    // Integrate velocity to update position
+    x_.segment<3>(0) += x_.segment<3>(3) * current_dt;
+
+    // Propagate covariance matrix
     P_ = F_ * P_ * F_.transpose() + Q_;
 }
 
-void EKF::update(const Eigen::VectorXd& z) {
-    // Update measurement noise covariance
-    updateMeasurementNoiseCovariance();
+void EKF::update(const Eigen::Vector3f& acc, const Eigen::Quaternionf& q_meas) {
+    // Perform the EKF update step
 
-    // Compute Kalman gain
-    Eigen::MatrixXd K = P_ * H_.transpose() * (H_ * P_ * H_.transpose() + R_).inverse();
+    // Update the observation matrix (H) to include both accelerometer and quaternion measurements
+    H_.setZero();
+    H_.block<3, 3>(6, 0) = Eigen::Matrix3f::Identity();  // Accelerometer measurement
+    H_.block<4, 4>(9, 3) = Eigen::Matrix4f::Identity();  // Quaternion measurement
 
-    // Perform update step
-    x_ = x_ + K * (z - H_ * x_);
-    P_ = (Eigen::MatrixXd::Identity(n_, n_) - K * H_) * P_;
+    // Compute the Kalman gain (K)
+    Eigen::Matrix<float, 7, 7> S = H_.transpose() * P_ * H_ + R_;
+    Eigen::Matrix<float, 15, 7> K = P_ * H_ * S.inverse();
+
+    // Compute the measurement residual (z - h(x))
+    Eigen::Matrix<float, 7, 1> residual;
+    residual.block<3, 1>(0, 0) = acc - x_.block<3, 1>(6, 0);
+    residual.block<4, 1>(3, 0) = q_meas.coeffs() - x_.block<4, 1>(9, 0);
+
+    // Update the state estimate (x) and covariance matrix (P)
+    x_ = x_ + K * residual;
+    P_ = (Eigen::Matrix<float, 15, 15>::Identity() - K * H_.transpose()) * P_;
 }
 
-Eigen::VectorXd EKF::getState() const {
-    // 3 position and 4 quaternion elements
-
-    Eigen::VectorXd state(7);
-    state << x_.head<3>(), x_.segment<4>(6);
-    return state;
-}
-
-Eigen::MatrixXd EKF::getCovariance() const {
-    return P_;
-}
-
-void EKF::updateErrorModel(double dt) {
-    // Update bias instability
-    bias_instability_ = bias_instability_ * std::exp(-dt / bias_instability_time_constant_);
-
-    // Update white noise
-    noise_ = noise_ * std::sqrt(dt);
-
-    // Update bias
-    bias_ = bias_ + bias_instability_ + noise_;
-
-    // Update state transition matrix
-    F_.block<3, 3>(0, 3) = Eigen::Matrix3d::Identity() * dt;
-    F_.block<3, 3>(3, 6) = -skew_symmetric(misalignment_ * ((scale_factor_.segment<3>(0)).asDiagonal() * x_.segment<3>(3))) * dt;
-    F_.block<3, 3>(6, 9) = -skew_symmetric(misalignment_ * ((scale_factor_.segment<3>(3)).asDiagonal() * x_.segment<3>(6))) * dt;
-
-    // Update process noise covariance
-    updateProcessNoiseCovariance(dt);
-}
-
-void EKF::updateProcessNoiseCovariance(double dt) {
-    // Update process noise covariance matrix based on error model parameters
-    Q_.block<3, 3>(0, 0) = acc_white_noise_ * Eigen::Matrix3d::Identity() * dt;
-    Q_.block<3, 3>(3, 3) = gyro_white_noise_ * Eigen::Matrix3d::Identity() * dt;
-    Q_.block<3, 3>(6, 6) = acc_bias_instability_ * Eigen::Matrix3d::Identity() * dt;
-    Q_.block<3, 3>(9, 9) = gyro_bias_instability_ * Eigen::Matrix3d::Identity() * dt;
-}
-
-void EKF::updateMeasurementNoiseCovariance() {
-    // Update measurement noise covariance matrix based on Allan variance parameters
-    R_.block<3, 3>(0, 0) = acc_white_noise_ * Eigen::Matrix3d::Identity();
-    R_.block<3, 3>(3, 3) = gyro_white_noise_ * Eigen::Matrix3d::Identity();
+Eigen::Matrix<float, 15, 1> EKF::getStateEstimate() {
+    return x_;
 }
