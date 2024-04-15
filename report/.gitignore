@@ -7,3 +7,6 @@ report.out
 *.fdb_latexmk
 *.synctex.gz
 *.pdf
+
+funding_report.tex
+recipts/
