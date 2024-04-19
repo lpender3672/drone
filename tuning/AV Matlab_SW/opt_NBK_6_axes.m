@@ -92,11 +92,11 @@ function [theta_v, theta_o]=opt_NBK_axis(sampled_axis, sample_freq, axis_name)
         if Cost_c < Cost_d
             b = d;
             Cost_b = Cost_d;
-            % plot_AV_mdl_components(tau,av,theta_c,er)
+            plot_AV_mdl_components(tau,av,theta_c,er)
         else
             a = c;
             Cost_a = Cost_c
-            % plot_AV_mdl_components(tau,av,theta_d,er)
+            plot_AV_mdl_components(tau,av,theta_d,er)
         end
         pause_time = 1.0;   % seconds
         pause(pause_time)

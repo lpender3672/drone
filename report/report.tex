@@ -105,6 +105,11 @@ and white, this simplifies to
 Where $\mathbf{T}_i(s)$ is the 3 axes transfer functions from the ith
 component of $\boldsymbol{\omega}_z$ to $\mathbf{z}(t)$, and $\mathbf{B}_z \in \mathbb{R}^{n_z \times 3}$ is the ith column of $\mathbf{B}_z$.
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{AV_Z.jpg}
+    \caption{Optimization based fitting of error model to sampled Allan Variance of IMU Z axis.}
+\end{figure}
 
 \subsubsection{Deterministic Error Modelling}
 
@@ -235,19 +240,19 @@ The result of LQR is the gain matrix $\mathbf{K}$ such that $\mathbf{u} = -\math
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{schematic.jpg}
+    \includegraphics[width=0.99\textwidth]{schematic.jpg}
     \caption{PCB Schematic}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{board_pcb.png}
+    \includegraphics[width=0.6\textwidth]{board_pcb.png}
     \caption{PCB layout}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{board_soldered.jpg}
+    \includegraphics[width=0.6\textwidth]{board_soldered.jpg}
     \caption{Soldered PCB}
 \end{figure}
 
@@ -276,6 +281,7 @@ However, due to time constraints, the implementation of the state estimation alg
 
 Future work will focus on completing the implementation of the state estimation algorithm, integrating the control system, and conducting extensive testing and validation. This will involve refining the firmware, tuning the Kalman filter parameters, and evaluating the drone's performance in various flight scenarios. Additionally, further optimization of the hardware and firmware components may be necessary to achieve the desired flight characteristics and robustness.
 
+\newpage
 \section{Conclusion}
 
 The hardware development of the custom-built drone for harsh environments has been successfully completed, but additional time and effort are required to finalize the state estimation and control system implementation. Future work will focus on programming the extended Kalman filter, integrating control algorithms, and conducting comprehensive testing to ensure reliability and performance in challenging conditions.
