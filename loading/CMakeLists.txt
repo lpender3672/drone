@@ -22,6 +22,7 @@
 
 cmake_minimum_required(VERSION 3.12)
 
+add_subdirectory(hx711-pico-c)
 
 add_executable(loading
         loading.c
@@ -31,7 +32,7 @@ add_executable(loading
 #        HX711_NO_MUTEX
 #        )
 
-target_link_libraries(loading INTERFACE
+target_link_libraries(loading
         pico_stdlib
         hardware_clocks
         hardware_dma
@@ -42,12 +43,9 @@ target_link_libraries(loading INTERFACE
         pico_platform
         pico_sync
         pico_time
+        hx711-pico-c
         )
 
-target_sources(loading INTERFACE
-        ${CMAKE_CURRENT_LIST_DIR}/src/hx711.c
-        ${CMAKE_CURRENT_LIST_DIR}/src/hx711_multi.c
-        ${CMAKE_CURRENT_LIST_DIR}/src/common.c
-        ${CMAKE_CURRENT_LIST_DIR}/src/util.c
-        )
-
+target_include_directories(loading PRIVATE
+        hx711-pico-c/include
+    )

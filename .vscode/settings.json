@@ -42,7 +42,8 @@
         "ostream": "cpp",
         "ios": "cpp",
         "mutex.h": "c",
-        "util.h": "c"
+        "util.h": "c",
+        "common.h": "c"
     },
     "cmake.buildBeforeRun": true,
     "cortex-debug.openocdPath": "C:/Program Files (x86)/OpenOCD-20231002-0.12.0/bin/openocd.exe"
