@@ -7,3 +7,7 @@ report.out
 *.fdb_latexmk
 *.synctex.gz
 *.pdf
+
+# ignore recipts and impact report
+recipts/
+*.docx
