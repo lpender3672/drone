@@ -49,3 +49,8 @@ target_link_libraries(loading
 target_include_directories(loading PRIVATE
         hx711-pico-c/include
     )
+
+pico_enable_stdio_usb(loading 1)
+pico_enable_stdio_uart(loading 0)
+
+example_auto_set_url(main )

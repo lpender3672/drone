@@ -1,10 +1,14 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+
+#include "pico/stdlib.h"
 #include "hx711-pico-c/include/common.h"
 
 
 int main() {
+
+    stdio_init_all();
 
     hx711_config_t hxcfg;
     hx711_get_default_config(&hxcfg);
@@ -29,7 +33,7 @@ int main() {
     // hx711_power_up(&hx, hx711_gain_64);
 
     // 5. Wait for readings to settle
-    hx711_wait_settle(hx711_gain_128);
+    hx711_wait_settle(5);
 
     // 6. Read values
     // You can now...
@@ -40,7 +44,6 @@ int main() {
     while (true) {
         val = hx711_get_value(&hx);
         printf("blocking value: %li\n", val);
-        sleep_ms(1000);
     }
     
     //6. Stop communication with HX711
