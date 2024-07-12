@@ -9,8 +9,8 @@ int main() {
     hx711_config_t hxcfg;
     hx711_get_default_config(&hxcfg);
 
-    hxcfg.clock_pin = 20;
-    hxcfg.data_pin = 19;
+    hxcfg.clock_pin = 14;
+    hxcfg.data_pin = 15;
 
     hx711_t hx;
 
