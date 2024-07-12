@@ -28,4 +28,4 @@ add_compile_options(-Wall
 
 add_subdirectory(tests)
 add_subdirectory(drone)
-
+add_subdirectory(loading)

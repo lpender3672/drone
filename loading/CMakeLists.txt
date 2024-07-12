@@ -1,27 +1,53 @@
+# MIT License
+# 
+# Copyright (c) 2023 Daniel Robertson
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+cmake_minimum_required(VERSION 3.12)
 
 
 add_executable(loading
         loading.c
-        hx711.c
         )
 
-# pull in common dependencies and additional pwm hardware support
-target_link_libraries(main
+#target_compile_definitions(hx711-pico-c INTERFACE
+#        HX711_NO_MUTEX
+#        )
+
+target_link_libraries(loading INTERFACE
         pico_stdlib
-        hardware_pwm
         hardware_clocks
+        hardware_dma
+        hardware_gpio
         hardware_irq
-        hardware_i2c
-        hardware_uart
-        hardware_adc
-        pico_multicore
+        hardware_pio
+        hardware_timer
+        pico_platform
+        pico_sync
+        pico_time
         )
 
-target_link_libraries (main Eigen3::Eigen)
-
-# create map/bin/hex file etc.
-pico_add_extra_outputs(loading )
-
-# add url via pico_set_program_url
-example_auto_set_url(loading )
+target_sources(loading INTERFACE
+        ${CMAKE_CURRENT_LIST_DIR}/src/hx711.c
+        ${CMAKE_CURRENT_LIST_DIR}/src/hx711_multi.c
+        ${CMAKE_CURRENT_LIST_DIR}/src/common.c
+        ${CMAKE_CURRENT_LIST_DIR}/src/util.c
+        )
 
