@@ -25,7 +25,9 @@ cmake_minimum_required(VERSION 3.12)
 add_subdirectory(hx711-pico-c)
 
 add_executable(loading
-        loading.c
+        loading.cpp
+        ../drone/motor.cpp
+        ../drone/CrsfSerial.cpp
         )
 
 #target_compile_definitions(hx711-pico-c INTERFACE
@@ -38,6 +40,8 @@ target_link_libraries(loading
         hardware_dma
         hardware_gpio
         hardware_irq
+        hardware_pwm
+        hardware_i2c
         hardware_pio
         hardware_timer
         pico_platform
