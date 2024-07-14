@@ -51,7 +51,7 @@ int32_t read_average(hx711_t* hx) {
     for (int i = 0; i < N; i++) {
         new_val = hx711_get_value(hx);
         val += new_val;
-        printf("Reading: %d\n", new_val);
+        //printf("Reading: %d\n", new_val);
         sleep_ms(200);
     }
     gpio_put(25, 0); // signal no longer reading
@@ -131,16 +131,33 @@ int main() {
     arm_escs();
     sleep_ms(2000);
     calibrate_load(&hx, &unit_force_value, &zero_force_value);
-
-    drop_mass();
-    sleep_ms(5000);
+    sleep_ms(2000);
 
     float known_force = 1.051 * 9.81; // N
-    int32_t current_raw = read_average(&hx);
-    float measured_force = (current_raw - zero_force_value) * known_force / (unit_force_value - zero_force_value);
 
-    printf("Measured force: %f\n", measured_force);
-    
+    /*
+    while (1) {
+        int32_t current_raw = read_average(&hx);
+        float measured_force = known_force - (current_raw - zero_force_value) * known_force / (unit_force_value - zero_force_value);
+        printf("force: %f\n", measured_force);
+    }
+    */
+
+    for (int i = 1; i < 11; i++) {
+        set_esc_speed(50 * i);
+        sleep_ms(500);
+
+        int32_t current_raw = read_average(&hx);
+        float measured_force = known_force - (current_raw - zero_force_value) * known_force / (unit_force_value - zero_force_value);
+
+        printf("speed: %i , force: %f\n", 50 * i, measured_force);
+    }
+    set_esc_speed(0);
+
+
+    // before finish ensure mass is lifted to prevent damage
+    lift_mass();
+    sleep_ms(1000);
     //6. Stop communication with HX711
     hx711_close(&hx);
 }
