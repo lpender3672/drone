@@ -124,6 +124,8 @@ int main() {
     hx711_power_up(&hx, hx711_gain_128);
     hx711_wait_settle(hx711_rate_10);
 
+    // calibrate if needed
+    // calibrate_escs();
 
     // setup esc and servo
     int32_t unit_force_value;
@@ -133,27 +135,23 @@ int main() {
     calibrate_load(&hx, &unit_force_value, &zero_force_value);
     sleep_ms(2000);
 
-    float known_force = 1.051 * 9.81; // N
+    float known_unit_force = 1.051 * 9.81; // N
 
-    /*
-    while (1) {
-        int32_t current_raw = read_average(&hx);
-        float measured_force = known_force - (current_raw - zero_force_value) * known_force / (unit_force_value - zero_force_value);
-        printf("force: %f\n", measured_force);
-    }
-    */
+    int max_speed = 500;
+    int speed_interval = 20;
 
-    for (int i = 1; i < 11; i++) {
-        set_esc_speed(50 * i);
+    for (int s = speed_interval; s < max_speed; s += speed_interval) {
+        set_esc_speed(s);
         sleep_ms(500);
 
         int32_t current_raw = read_average(&hx);
-        float measured_force = known_force - (current_raw - zero_force_value) * known_force / (unit_force_value - zero_force_value);
+        float measured_force = known_unit_force - (current_raw - zero_force_value) * known_unit_force / (unit_force_value - zero_force_value);
 
-        printf("speed: %i , force: %f\n", 50 * i, measured_force);
+        printf("speed: %i , force: %f\n", s, measured_force);
+        set_esc_speed(0);
+
+        sleep_ms(5000); // allow motor to cool down before next test
     }
-    set_esc_speed(0);
-
 
     // before finish ensure mass is lifted to prevent damage
     lift_mass();
