@@ -6,18 +6,19 @@ public:
     EKF(float dt, const Eigen::Vector3f& av_sbsnsk_x, const Eigen::Vector3f& av_sbsnsk_y, const Eigen::Vector3f& av_sbsnsk_z,
          const Eigen::Vector3f& asd_nk_x, const Eigen::Vector3f& asd_nk_y, const Eigen::Vector3f& asd_nk_z);
 
-    void predict(const Eigen::Vector3f& acc_meas, const Eigen::Quaternionf& q_meas, float current_dt);
+    void EKF::predict();
 
-    void update(const Eigen::Vector3f& acc_meas, const Eigen::Quaternionf& q_meas);
+    void update(const Eigen::Vector2d& z);
 
-    Eigen::Matrix<float, 15, 1> getStateEstimate();
+    Eigen::Vector3f getStateEstimate();
 
 private:
-    float dt_;
-    Eigen::Matrix<float, 15, 15> Q_;
-    Eigen::Matrix<float, 7, 7> R_;
-    Eigen::Matrix<float, 15, 15> F_;
-    Eigen::Matrix<float, 15, 7> H_;
-    Eigen::Matrix<float, 15, 1> x_;
-    Eigen::Matrix<float, 15, 15> P_;
+    double dt_;
+    Eigen::Vector2d x_;
+    Eigen::Matrix<double, 3, 3> Q_;
+    Eigen::Matrix<double, 7, 7> R_;
+    Eigen::Matrix<double, 15, 15> F_;
+    Eigen::Matrix<double, 2, 2> H_;
+    Eigen::Matrix<double, 15, 1> x_;
+    Eigen::Matrix<double, 15, 15> P_;
 };
