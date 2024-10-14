@@ -25,7 +25,7 @@ cmake_minimum_required(VERSION 3.12)
 add_subdirectory(hx711-pico-c)
 
 add_executable(loading
-        loading.cpp
+        loading_cmd.cpp
         ../drone/motor.cpp
         ../drone/CrsfSerial.cpp
         )
@@ -57,4 +57,5 @@ target_include_directories(loading PRIVATE
 pico_enable_stdio_usb(loading 1)
 pico_enable_stdio_uart(loading 0)
 
-example_auto_set_url(main )
+pico_add_extra_outputs(loading )
+example_auto_set_url(loading )
