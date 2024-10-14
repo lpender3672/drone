@@ -8,20 +8,24 @@ import matplotlib.pyplot as plt
 biblade = pd.read_csv('loading/bi-blade.csv')
 triblade = pd.read_csv('loading/tri-blade.csv')
 toroidal = pd.read_csv('loading/toroidal.csv')
+noprop = pd.read_csv('loading/no-blade.csv')
 
 # plot power vs thrust
 
 fig, ax = plt.subplots()
 
-ax.plot(biblade['Power'], biblade['Thrust'], '-o', label="Bi-Blade")
-ax.plot(triblade['Power'], triblade['Thrust'], '-o', label="Tri-Blade")
-ax.plot(toroidal['Power'], toroidal['Thrust'], '-o', label="Toroidal")
+ax.plot(biblade['Power (W)'], biblade['Thrust (N)'], '-o', label="Bi-Blade", linewidth=1.5, markersize=4)
+ax.plot(triblade['Power (W)'], triblade['Thrust'], '-o', label="Tri-Blade", linewidth=1.5, markersize=4)
+ax.plot(toroidal['Power (W)'], toroidal['Thrust'], '-o', label="Toroidal", linewidth=1.5, markersize=4)
+ax.plot(np.abs(noprop['Power (W)']), noprop['Thrust (N)'], '-o', label="No Prop", linewidth=1.5, markersize=4)
 
 ax.set_xlabel('Power (W)')
 ax.set_ylabel('Thrust (N)')
 
 plt.legend()
+plt.grid()
 
+plt.savefig('loading/power_vs_thrust.eps')
 plt.show()
 
 
@@ -39,5 +43,7 @@ ax.set_xlabel('Approximate Speed (RPM)')
 ax.set_ylabel('Thrust (N)')
 
 plt.legend()
+plt.grid()
 
+plt.savefig('loading/speed_vs_thrust.eps')
 plt.show()

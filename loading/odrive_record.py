@@ -174,7 +174,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 df = pd.DataFrame({'Power (W)': powers, 'Thrust (N)': thrusts, 'Speed (RPM)': target_speeds * 60})
-df.to_csv('loading/tri-blade.csv', index=False)
+df.to_csv('loading/bi-blade.csv', index=False)
 
 plt.plot(powers, thrusts, '-o', label="Power")
 plt.show()
