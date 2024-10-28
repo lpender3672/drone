@@ -127,7 +127,7 @@ int main() {
     hx711_wait_settle(hx711_rate_10);
 
     // calibrate if needed
-    // calibrate_escs();
+    calibrate_escs();
 
     // setup esc and servo
     int32_t unit_force_value;
@@ -146,7 +146,7 @@ int main() {
         char input_buffer[5] = {0};
 
         // Read characters until "read\n" is received
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 24; i++) {
             input_buffer[i] = getchar();
             if (input_buffer[i] == '\n') {
                 input_buffer[i] = '\0';
@@ -173,11 +173,25 @@ int main() {
 
             printf("Calibration found %i and %i\n", unit_force_value, zero_force_value);
 
+        // check if the input was "setesc <speed>"
+        } else if (strncmp(input_buffer, "speed", 5) == 0) {
+            //printf("Setting ESC speed...\n");
+            float throttle = atof(input_buffer + 5);
+            if (throttle < 0 || throttle > 1) {
+                printf("Invalid throttle. Please enter a float\n");
+            } else {
+                printf("Setting speed to %f\n", throttle);
+                set_esc_speed(500 * throttle);
+            }
+        } else if (strcmp(input_buffer, "arm") == 0) {
+            //printf("Arming ESCs...\n");
+            arm_escs();
         } else if (strcmp(input_buffer, "exit") == 0) {
             printf("Exiting...\n");
             break;
         } else {
-            printf("Invalid command. Please enter 'read' or 'exit'.\n");
+            printf("Invalid command %s\n", input_buffer);
+
             //printf("Received: %s\n", input_buffer);
         }
     }
