@@ -6,7 +6,7 @@ datasets = ["A", "B", "C", "D"]
 
 for dataset in datasets:
     try:
-        with open(f"loading/{dataset}.txt", "r") as f:
+        with open(f"loading/data/{dataset}.txt", "r") as f:
             data = f.read().splitlines()
     except FileNotFoundError:
         print(f"File {dataset}.txt not found")
@@ -35,6 +35,6 @@ plt.ylabel("Force")
 plt.grid()
 plt.legend()
 
-plt.savefig("loading/thrust_profile_plot.png")
+plt.savefig("loading/figures/thrust_profile_plot.png")
 
 plt.show()

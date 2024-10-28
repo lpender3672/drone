@@ -137,7 +137,7 @@ int main() {
     calibrate_load(&hx, &unit_force_value, &zero_force_value);
     sleep_ms(2000);
 
-    float known_unit_force = 0.677 * 9.81; // N
+    float known_unit_force = 0.692 * 9.81; // N
 
     while (true) {
         //printf("Waiting for 'read' command to take a reading...\n");

@@ -78,7 +78,7 @@ def reset_config():
 
     ## sensorless control
 
-    odrv.axis0.controller.config.vel_limit = 358 # max vel at 12V for S1+this motor
+    odrv.axis0.controller.config.vel_limit = 358
     odrv.axis0.config.sensorless_ramp.vel = 200
     odrv.axis0.config.sensorless_ramp.accel = 20
     odrv.axis0.config.sensorless_ramp.current = 10
@@ -134,7 +134,11 @@ print("Performing ramp")
 # set the velocity setpoint
 odrv0.axis0.requested_state = AxisState.CLOSED_LOOP_CONTROL
 
-target_speeds = np.linspace(10, 250, 10)
+target_speeds = np.linspace(10, 250, 8)
+
+# ramp up then ramp down
+target_speeds = np.concatenate([target_speeds, target_speeds[::-1]])
+measured_speeds = np.zeros_like(target_speeds)
 
 powers = np.zeros_like(target_speeds)
 thrusts = np.zeros_like(target_speeds)
@@ -161,6 +165,7 @@ for speed in target_speeds:
     
     powers[i] = power # W
     thrusts[i] = reading # N
+    measured_speeds[i] = odrv0.axis0.vel_estimate # rad
     
     time.sleep(2)
     i += 1
@@ -173,8 +178,8 @@ odrive.utils.dump_errors(odrv0, True)
 import matplotlib.pyplot as plt
 import pandas as pd
 
-df = pd.DataFrame({'Power (W)': powers, 'Thrust (N)': thrusts, 'Speed (RPM)': target_speeds * 60})
-df.to_csv('loading/bi-blade.csv', index=False)
+df = pd.DataFrame({'Power (W)': powers, 'Thrust (N)': thrusts, 'Speed (RPM)': measured_speeds * 60})
+df.to_csv('loading/data/toroidal.csv', index=False)
 
 plt.plot(powers, thrusts, '-o', label="Power")
 plt.show()

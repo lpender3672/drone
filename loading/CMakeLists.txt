@@ -25,7 +25,7 @@ cmake_minimum_required(VERSION 3.12)
 add_subdirectory(hx711-pico-c)
 
 add_executable(loading
-        loading_cmd.cpp
+        loading.cpp
         ../drone/motor.cpp
         ../drone/CrsfSerial.cpp
         )
@@ -59,3 +59,40 @@ pico_enable_stdio_uart(loading 0)
 
 pico_add_extra_outputs(loading )
 example_auto_set_url(loading )
+
+
+add_executable(loading_cmd
+        loading_cmd.cpp
+        ../drone/motor.cpp
+        ../drone/CrsfSerial.cpp
+        )
+
+#target_compile_definitions(hx711-pico-c INTERFACE
+#        HX711_NO_MUTEX
+#        )
+
+target_link_libraries(loading_cmd
+        pico_stdlib
+        hardware_clocks
+        hardware_dma
+        hardware_gpio
+        hardware_irq
+        hardware_pwm
+        hardware_i2c
+        hardware_pio
+        hardware_timer
+        pico_platform
+        pico_sync
+        pico_time
+        hx711-pico-c
+        )
+
+target_include_directories(loading_cmd PRIVATE
+        hx711-pico-c/include
+    )
+
+pico_enable_stdio_usb(loading_cmd 1)
+pico_enable_stdio_uart(loading_cmd 0)
+
+pico_add_extra_outputs(loading_cmd )
+example_auto_set_url(loading_cmd )
