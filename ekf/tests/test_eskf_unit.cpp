@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include "../eskf.h"
+#include "eskf.h"
+#include "sensor_io.h"
 #include <cmath>
 #include <random>
 

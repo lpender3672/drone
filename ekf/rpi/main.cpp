@@ -6,6 +6,7 @@
 #include <csignal>
 #include "RTIMULib.h"
 #include "eskf.h"
+#include "sensor_io.h"
 
 volatile bool running = true;
 void signalHandler(int signum) { running = false; }

@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <csignal>
 #include "RTIMULib.h"
+#include "sensor_io.h"
 
 volatile bool running = true;
 
@@ -63,16 +64,14 @@ int main() {
         std::cerr << "Please run 'RTIMULibCal' to generate RTIMULib.ini" << std::endl;
     }
     
-    std::ofstream logFile("sensor_data.csv");
-    logFile << "timestamp,accel_x,accel_y,accel_z,gyro_x,gyro_y,gyro_z,mag_x,mag_y,mag_z,pressure" << std::endl;
+    // Create sensor writer using the shared utility class
+    SensorWriter writer("data/sensor_data.csv");
     
     auto startTime = std::chrono::high_resolution_clock::now();
     int sampleRate = imu->IMUGetPollInterval();
     
     std::cout << "Logging started. Press Ctrl+C to stop." << std::endl;
     std::cout << "Poll interval: " << sampleRate << " ms" << std::endl;
-    
-    int count = 0;
     
     while (running) {
         auto loopStart = std::chrono::high_resolution_clock::now();
@@ -82,27 +81,26 @@ int main() {
             auto timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
                 loopStart - startTime).count() / 1000000.0;
             
-            logFile << std::fixed << std::setprecision(6) << timestamp << ","
-                    << imuData.accel.x() << "," << imuData.accel.y() << "," << imuData.accel.z() << ","
-                    << imuData.gyro.x() << "," << imuData.gyro.y() << "," << imuData.gyro.z() << ","
-                    << imuData.compass.x() << "," << imuData.compass.y() << "," << imuData.compass.z() << ",";
+            // Populate sensor data structure
+            SensorData data;
+            data.timestamp = timestamp;
+            data.accel << imuData.accel.x(), imuData.accel.y(), imuData.accel.z();
+            data.gyro << imuData.gyro.x(), imuData.gyro.y(), imuData.gyro.z();
+            data.mag << imuData.compass.x(), imuData.compass.y(), imuData.compass.z();
             
             if (pressure->pressureRead(imuData)) {
-                logFile << imuData.pressure << std::endl;
+                data.pressure = imuData.pressure;
             } else {
-                logFile << "0" << std::endl;
+                data.pressure = 0.0;
             }
             
-            // Flush to disk periodically
-            if (++count % 100 == 0) {
-                logFile.flush();
-            }
+            // Write using the sensor writer
+            writer.write(data);
         }
         
         std::this_thread::sleep_until(loopStart + std::chrono::milliseconds(3));
     }
     
-    logFile.close();
     std::cout << "\nLogging stopped. Data saved to sensor_data.csv" << std::endl;
     
     return 0;

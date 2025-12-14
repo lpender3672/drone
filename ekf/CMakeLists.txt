@@ -24,6 +24,9 @@ endif()
 # Include Eigen headers
 include_directories(${EIGEN3_INCLUDE_DIR})
 
+# Include shared headers (eskf.h, sensor_io.h, etc.)
+include_directories(${CMAKE_SOURCE_DIR}/shared)
+
 # Main executable (only for RPI/Linux with RTIMULib)
 if(RPI_BUILD)
     add_executable(ins_runner rpi/main.cpp)
@@ -51,5 +54,5 @@ if(BUILD_TESTING)
         Eigen3::Eigen
     )
     
-    target_include_directories(eskf_tests PRIVATE .)
+    target_include_directories(eskf_tests PRIVATE ${CMAKE_SOURCE_DIR}/shared)
 endif()

@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include "../eskf.h"
+#include "eskf.h"
+#include "sensor_io.h"
 #include <cmath>
 #include <random>
+#include <fstream>
 
 // Simulates sensor data for controlled test scenarios
 class MockSensorData {
@@ -458,4 +460,166 @@ TEST_F(ESKFIntegrationTest, MultipleUpdatesSameTimestep) {
         ASSERT_TRUE(isValidState(eskf)) << "Invalid at step " << i;
     }
 }
+
+// =============================================================================
+// REAL SENSOR DATA TESTS
+// =============================================================================
+
+TEST_F(ESKFIntegrationTest, RealSensorDataProcessing) {
+    // Given: ESKF and real sensor data from CSV file
+    // This test uses actual recorded sensor data to validate the filter
+    // with realistic noise characteristics and sensor dynamics
+    
+    std::string data_file = "data/sensor_data.csv";
+    
+    // Check if file exists
+    std::ifstream check_file(data_file);
+    if (!check_file.good()) {
+        GTEST_SKIP() << "Sensor data file not found: " << data_file;
+    }
+    check_file.close();
+    
+    // Initialize ESKF with reasonable starting position
+    // (You may want to adjust this based on where the data was collected)
+    ESKF eskf(params, init_lla);
+    
+    // When: We process real sensor data
+    SensorReader reader(data_file);
+    SensorData data;
+    
+    double last_timestamp = -1.0;
+    int sample_count = 0;
+    int max_samples = 1000; // Limit to first 1000 samples for faster testing
+    
+    while (reader.read(data) && sample_count < max_samples) {
+        // Calculate dt from timestamps
+        if (last_timestamp < 0) {
+            last_timestamp = data.timestamp;
+            continue;
+        }
+        
+        double dt = data.timestamp - last_timestamp;
+        last_timestamp = data.timestamp;
+        
+        // Skip if dt is unreasonable (file glitch or first sample)
+        if (dt <= 0 || dt > 1.0) {
+            continue;
+        }
+        
+        // Predict with real sensor data
+        eskf.predict(data.accel, data.gyro, dt);
+        
+        // Apply updates periodically
+        if (sample_count % 10 == 0 && data.pressure > 0) {
+            eskf.updateBaro(data.pressure);
+        }
+        
+        if (sample_count % 20 == 0 && data.mag.norm() > 0.1) {
+            eskf.updateMag(data.mag);
+        }
+        
+        // Then: State should remain valid throughout
+        ASSERT_TRUE(isValidState(eskf)) 
+            << "Invalid state at sample " << sample_count 
+            << " (t=" << data.timestamp << "s)";
+        
+        // Sanity checks on state
+        auto pos = eskf.getPositionLLA();
+        ASSERT_TRUE(std::abs(pos(0)) < M_PI) << "Invalid latitude";
+        ASSERT_TRUE(std::abs(pos(1)) < M_PI) << "Invalid longitude";
+        ASSERT_TRUE(pos(2) > -500.0 && pos(2) < 10000.0) << "Invalid altitude";
+        
+        auto vel = eskf.getVelocity();
+        ASSERT_TRUE(vel.norm() < 100.0) << "Unreasonable velocity: " << vel.norm() << " m/s";
+        
+        sample_count++;
+    }
+    
+    EXPECT_GT(sample_count, 10) << "Should have processed at least 10 samples";
+    
+    std::cout << "Successfully processed " << sample_count 
+              << " samples of real sensor data" << std::endl;
+}
+
+TEST_F(ESKFIntegrationTest, RealSensorDataWithOutputLogging) {
+    // Given: ESKF with real sensor data and output writer
+    // This test demonstrates how to log INS output during processing
+    
+    std::string data_file = "data/sensor_data.csv";
+    
+    // Check if file exists
+    std::ifstream check_file(data_file);
+    if (!check_file.good()) {
+        GTEST_SKIP() << "Sensor data file not found: " << data_file;
+    }
+    check_file.close();
+    
+    ESKF eskf(params, init_lla);
+    
+    // Create output writer for INS data
+    std::string output_file = "test_ins_output.csv";
+    INSWriter writer(output_file);
+    
+    // When: We process and log data
+    SensorReader reader(data_file);
+    SensorData sensor_data;
+    
+    double last_timestamp = -1.0;
+    int sample_count = 0;
+    int max_samples = 500;
+    
+    while (reader.read(sensor_data) && sample_count < max_samples) {
+        if (last_timestamp < 0) {
+            last_timestamp = sensor_data.timestamp;
+            continue;
+        }
+        
+        double dt = sensor_data.timestamp - last_timestamp;
+        last_timestamp = sensor_data.timestamp;
+        
+        if (dt <= 0 || dt > 1.0) continue;
+        
+        eskf.predict(sensor_data.accel, sensor_data.gyro, dt);
+        
+        if (sample_count % 10 == 0 && sensor_data.pressure > 0) {
+            eskf.updateBaro(sensor_data.pressure);
+        }
+        
+        if (sample_count % 20 == 0 && sensor_data.mag.norm() > 0.1) {
+            eskf.updateMag(sensor_data.mag);
+        }
+        
+        // Log INS output
+        INSData ins_data;
+        ins_data.timestamp = sensor_data.timestamp;
+        ins_data.position_lla = eskf.getPositionLLA();
+        ins_data.velocity = eskf.getVelocity();
+        ins_data.attitude = eskf.getAttitude();
+        ins_data.accel_bias = eskf.getAccelBias();
+        ins_data.gyro_bias = eskf.getGyroBias();
+        
+        writer.write(ins_data);
+        
+        sample_count++;
+    }
+    
+    writer.flush();
+    
+    // Then: Output file should exist and be readable
+    INSReader reader_out(output_file);
+    INSData read_data;
+    int read_count = 0;
+    while (reader_out.read(read_data) && read_count < sample_count) {
+        ASSERT_TRUE(read_data.position_lla.allFinite());
+        ASSERT_TRUE(read_data.velocity.allFinite());
+        ASSERT_TRUE(isValidState(eskf));
+        read_count++;
+    }
+    
+    EXPECT_EQ(read_count, sample_count) << "Should read back all written samples";
+    
+    std::cout << "Successfully processed and logged " << sample_count 
+              << " samples to " << output_file << std::endl;
+}
+
 
