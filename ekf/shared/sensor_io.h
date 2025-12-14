@@ -7,6 +7,7 @@
 #include <sstream>
 #include <vector>
 #include <Eigen/Dense>
+#include <filesystem>
 
 // Structure to hold sensor data for one timestep
 struct SensorData {
@@ -94,7 +95,8 @@ public:
     SensorReader(const std::string& filename) {
         file_.open(filename);
         if (!file_.is_open()) {
-            throw std::runtime_error("Failed to open file: " + filename);
+            throw std::runtime_error("Failed to open file: " + 
+                         std::filesystem::absolute(filename).string());
         }
         // Skip header line
         std::string header;

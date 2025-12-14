@@ -3,34 +3,10 @@
 #include <Eigen/Geometry>
 #include "eskf.h"
 #include "sensor_io.h"
+#include "mock_sensor_data.h"
 #include <cmath>
-#include <random>
 #include <fstream>
-
-// Simulates sensor data for controlled test scenarios
-class MockSensorData {
-public:
-    MockSensorData(unsigned seed = 42) : gen_(seed) {}
-    
-    Eigen::Vector3d noisyAccel(const Eigen::Vector3d& true_val, double std_dev) {
-        std::normal_distribution<> d(0.0, std_dev);
-        return true_val + Eigen::Vector3d(d(gen_), d(gen_), d(gen_));
-    }
-    
-    Eigen::Vector3d noisyGyro(const Eigen::Vector3d& true_val, double std_dev) {
-        std::normal_distribution<> d(0.0, std_dev);
-        return true_val + Eigen::Vector3d(d(gen_), d(gen_), d(gen_));
-    }
-    
-    double noisyBaro(double true_alt, double std_dev) {
-        std::normal_distribution<> d(0.0, std_dev);
-        double noisy_alt = true_alt + d(gen_);
-        return 1013.25 * pow(1.0 - noisy_alt / 44330.0, 1.0 / 0.1903);
-    }
-
-private:
-    std::mt19937 gen_;
-};
+#include <memory>
 
 class ESKFIntegrationTest : public ::testing::Test {
 public:
@@ -46,6 +22,9 @@ protected:
         params.tau_acc = 100.0;
         params.tau_gyro = 100.0;
         init_lla = Eigen::Vector3d(39.7392 * M_PI / 180.0, -104.9903 * M_PI / 180.0, 1609.0);
+        
+        // Initialize mock sensor data once with realistic baseline values from CSV
+        mock = std::make_unique<MockSensorData>(42);
     }
     
     bool isValidState(ESKF& eskf) {
@@ -61,6 +40,7 @@ protected:
 
     SensorParams params;
     Eigen::Vector3d init_lla;
+    std::unique_ptr<MockSensorData> mock;
 };
 
 // =============================================================================
@@ -88,17 +68,17 @@ TEST_F(ESKFIntegrationTest, StableFor60SecondsWithConstantInput) {
 TEST_F(ESKFIntegrationTest, StableFor60SecondsWithNoisyInput) {
     // Given: ESKF with noisy sensor inputs
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     int steps = 6000;
     
-    Eigen::Vector3d base_accel(0.0, 0.0, 0.0);
-    Eigen::Vector3d base_gyro(0.0, 0.0, 0.0);
+    // Use realistic baseline values from CSV data
+    Eigen::Vector3d base_accel = mock->getBaselineAccel();
+    Eigen::Vector3d base_gyro = mock->getBaselineGyro();
     
-    // When: We run for 60 seconds with noise
+    // When: We run for 60 seconds with noise around realistic baselines
     for (int i = 0; i < steps; ++i) {
-        Eigen::Vector3d noisy_accel = mock.noisyAccel(base_accel, 0.05);
-        Eigen::Vector3d noisy_gyro = mock.noisyGyro(base_gyro, 0.01);
+        Eigen::Vector3d noisy_accel = mock->noisyAccel(base_accel, 0.05);
+        Eigen::Vector3d noisy_gyro = mock->noisyGyro(base_gyro, 0.01);
         
         eskf.predict(noisy_accel, noisy_gyro, dt);
         
@@ -110,22 +90,25 @@ TEST_F(ESKFIntegrationTest, StableFor60SecondsWithNoisyInput) {
 TEST_F(ESKFIntegrationTest, StableFor5MinutesWithUpdates) {
     // Given: ESKF with predictions and periodic updates
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     int steps = 30000; // 5 minutes
     
-    // When: We run for 5 minutes with baro updates
+    // Use realistic baseline values from CSV data
+    Eigen::Vector3d base_accel = mock->getBaselineAccel();
+    Eigen::Vector3d base_gyro = mock->getBaselineGyro();
+    
+    // When: We run for 5 minutes with baro and mag updates
     for (int i = 0; i < steps; ++i) {
-        Eigen::Vector3d noisy_accel = mock.noisyAccel(Eigen::Vector3d::Zero(), 0.02);
-        Eigen::Vector3d noisy_gyro = mock.noisyGyro(Eigen::Vector3d::Zero(), 0.005);
+        Eigen::Vector3d noisy_accel = mock->noisyAccel(base_accel, 0.02);
+        Eigen::Vector3d noisy_gyro = mock->noisyGyro(base_gyro, 0.005);
         
         eskf.predict(noisy_accel, noisy_gyro, dt);
         
         if (i % 20 == 0) {
-            eskf.updateBaro(mock.noisyBaro(init_lla(2), 2.0));
+            eskf.updateBaro(mock->noisyBaro(init_lla(2), 2.0));
         }
         if (i % 50 == 0) {
-            eskf.updateMag(Eigen::Vector3d(1.0, 0.0, -0.5));
+            eskf.updateMag(mock->getBaselineMag());
         }
         
         // Then: State remains valid
@@ -157,18 +140,17 @@ TEST_F(ESKFIntegrationTest, CovarianceGrowsWithoutUpdates) {
 TEST_F(ESKFIntegrationTest, CovarianceBoundedWithUpdates) {
     // Given: ESKF with regular updates
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     std::vector<double> traces;
     
     // When: We run for 30 seconds with regular updates
     for (int i = 0; i < 3000; ++i) {
-        eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 0.01), 
-                     mock.noisyGyro(Eigen::Vector3d::Zero(), 0.001), dt);
+        eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 0.01), 
+                     mock->noisyGyro(Eigen::Vector3d::Zero(), 0.001), dt);
         
         if (i % 10 == 0) {
-            eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+            eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
         }
         
         if (i % 100 == 0) {
@@ -188,13 +170,12 @@ TEST_F(ESKFIntegrationTest, CovarianceBoundedWithUpdates) {
 TEST_F(ESKFIntegrationTest, CovarianceRecoverAfterOutage) {
     // Given: ESKF running normally
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // Normal operation for 10 seconds
     for (int i = 0; i < 1000; ++i) {
         eskf.predict(Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), dt);
-        if (i % 10 == 0) eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+        if (i % 10 == 0) eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
     }
     double normal_trace = eskf.getCovariance().trace();
     
@@ -210,7 +191,7 @@ TEST_F(ESKFIntegrationTest, CovarianceRecoverAfterOutage) {
     // When: Updates resume
     for (int i = 0; i < 1000; ++i) {
         eskf.predict(Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), dt);
-        if (i % 10 == 0) eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+        if (i % 10 == 0) eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
     }
     double recovery_trace = eskf.getCovariance().trace();
     
@@ -329,12 +310,11 @@ TEST_F(ESKFIntegrationTest, StableAtMultipleLatitudes) {
         double lat_rad = lat_deg * M_PI / 180.0;
         Eigen::Vector3d lla(lat_rad, 0.0, 100.0);
         ESKF eskf(params, lla);
-        MockSensorData mock(42);
         
         // When: We run for 30 seconds
         for (int i = 0; i < 3000; ++i) {
-            eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 0.01),
-                        mock.noisyGyro(Eigen::Vector3d::Zero(), 0.001), 0.01);
+            eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 0.01),
+                        mock->noisyGyro(Eigen::Vector3d::Zero(), 0.001), 0.01);
         }
         
         // Then: State remains valid
@@ -349,12 +329,11 @@ TEST_F(ESKFIntegrationTest, StableAtMultipleAltitudes) {
     for (double alt : altitudes) {
         Eigen::Vector3d lla(40.0 * M_PI / 180.0, 0.0, alt);
         ESKF eskf(params, lla);
-        MockSensorData mock(42);
         
         // When: We run for 30 seconds
         for (int i = 0; i < 3000; ++i) {
-            eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 0.01),
-                        mock.noisyGyro(Eigen::Vector3d::Zero(), 0.001), 0.01);
+            eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 0.01),
+                        mock->noisyGyro(Eigen::Vector3d::Zero(), 0.001), 0.01);
         }
         
         // Then: State remains valid
@@ -369,13 +348,12 @@ TEST_F(ESKFIntegrationTest, StableAtMultipleAltitudes) {
 TEST_F(ESKFIntegrationTest, StableWithHighNoise) {
     // Given: High sensor noise
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // When: We run with high noise
     for (int i = 0; i < 3000; ++i) {
-        eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 0.5),  // High accel noise
-                    mock.noisyGyro(Eigen::Vector3d::Zero(), 0.1),    // High gyro noise
+        eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 0.5),  // High accel noise
+                    mock->noisyGyro(Eigen::Vector3d::Zero(), 0.1),    // High gyro noise
                     dt);
         
         // Then: State remains valid
@@ -386,13 +364,12 @@ TEST_F(ESKFIntegrationTest, StableWithHighNoise) {
 TEST_F(ESKFIntegrationTest, StableWithVeryLowNoise) {
     // Given: Very low sensor noise
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // When: We run with minimal noise
     for (int i = 0; i < 3000; ++i) {
-        eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 1e-6),
-                    mock.noisyGyro(Eigen::Vector3d::Zero(), 1e-7),
+        eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 1e-6),
+                    mock->noisyGyro(Eigen::Vector3d::Zero(), 1e-7),
                     dt);
         
         // Then: State remains valid
@@ -407,13 +384,12 @@ TEST_F(ESKFIntegrationTest, StableWithVeryLowNoise) {
 TEST_F(ESKFIntegrationTest, StableWithFrequentUpdates) {
     // Given: Baro update every prediction step
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // When: Update every step for 30 seconds
     for (int i = 0; i < 3000; ++i) {
         eskf.predict(Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), dt);
-        eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+        eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
         
         ASSERT_TRUE(isValidState(eskf)) << "Invalid at step " << i;
     }
@@ -422,7 +398,6 @@ TEST_F(ESKFIntegrationTest, StableWithFrequentUpdates) {
 TEST_F(ESKFIntegrationTest, StableWithRareUpdates) {
     // Given: Baro update only every 5 seconds
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // When: Run with rare updates
@@ -430,7 +405,7 @@ TEST_F(ESKFIntegrationTest, StableWithRareUpdates) {
         eskf.predict(Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), dt);
         
         if (i % 500 == 0) { // Every 5 seconds
-            eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+            eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
         }
         
         ASSERT_TRUE(isValidState(eskf)) << "Invalid at step " << i;
@@ -444,16 +419,15 @@ TEST_F(ESKFIntegrationTest, StableWithRareUpdates) {
 TEST_F(ESKFIntegrationTest, MultipleUpdatesSameTimestep) {
     // Given: Both baro and mag updates at same time
     ESKF eskf(params, init_lla);
-    MockSensorData mock(42);
     double dt = 0.01;
     
     // When: We apply multiple updates per timestep
     for (int i = 0; i < 3000; ++i) {
-        eskf.predict(mock.noisyAccel(Eigen::Vector3d::Zero(), 0.01),
-                    mock.noisyGyro(Eigen::Vector3d::Zero(), 0.001), dt);
+        eskf.predict(mock->noisyAccel(Eigen::Vector3d::Zero(), 0.01),
+                    mock->noisyGyro(Eigen::Vector3d::Zero(), 0.001), dt);
         
         if (i % 10 == 0) {
-            eskf.updateBaro(mock.noisyBaro(init_lla(2), 1.0));
+            eskf.updateBaro(mock->noisyBaro(init_lla(2), 1.0));
             eskf.updateMag(Eigen::Vector3d(1.0, 0.0, -0.5));
         }
         
@@ -470,20 +444,12 @@ TEST_F(ESKFIntegrationTest, RealSensorDataProcessing) {
     // This test uses actual recorded sensor data to validate the filter
     // with realistic noise characteristics and sensor dynamics
     
-    std::string data_file = "data/sensor_data.csv";
-    
-    // Check if file exists
-    std::ifstream check_file(data_file);
-    if (!check_file.good()) {
-        GTEST_SKIP() << "Sensor data file not found: " << data_file;
-    }
-    check_file.close();
-    
     // Initialize ESKF with reasonable starting position
     // (You may want to adjust this based on where the data was collected)
     ESKF eskf(params, init_lla);
     
     // When: We process real sensor data
+    std::string data_file = "../../data/sensor_data.csv";
     SensorReader reader(data_file);
     SensorData data;
     
@@ -545,15 +511,6 @@ TEST_F(ESKFIntegrationTest, RealSensorDataWithOutputLogging) {
     // Given: ESKF with real sensor data and output writer
     // This test demonstrates how to log INS output during processing
     
-    std::string data_file = "data/sensor_data.csv";
-    
-    // Check if file exists
-    std::ifstream check_file(data_file);
-    if (!check_file.good()) {
-        GTEST_SKIP() << "Sensor data file not found: " << data_file;
-    }
-    check_file.close();
-    
     ESKF eskf(params, init_lla);
     
     // Create output writer for INS data
@@ -561,6 +518,7 @@ TEST_F(ESKFIntegrationTest, RealSensorDataWithOutputLogging) {
     INSWriter writer(output_file);
     
     // When: We process and log data
+    std::string data_file = "../../data/sensor_data.csv";
     SensorReader reader(data_file);
     SensorData sensor_data;
     
