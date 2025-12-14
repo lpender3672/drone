@@ -1,0 +1,103 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "msys2-debug",
+            "displayName": "MSYS2 Debug",
+            "description": "Debug build using MSYS2/MinGW64",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/msys2-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "msys2-release",
+            "displayName": "MSYS2 Release",
+            "description": "Release build using MSYS2/MinGW64",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/msys2-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "msys2-testing",
+            "displayName": "MSYS2 Testing",
+            "description": "MSYS2 build with unit testing enabled",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/msys2-testing",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_TESTING": "ON"
+            }
+        },
+        {
+            "name": "rpi-debug",
+            "displayName": "Raspberry Pi Debug",
+            "description": "Debug build for Raspberry Pi",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build/rpi-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "rpi-release",
+            "displayName": "Raspberry Pi Release",
+            "description": "Release build for Raspberry Pi",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build/rpi-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "msys2-debug",
+            "configurePreset": "msys2-debug",
+            "displayName": "Build MSYS2 Debug"
+        },
+        {
+            "name": "msys2-release",
+            "configurePreset": "msys2-release",
+            "displayName": "Build MSYS2 Release"
+        },
+        {
+            "name": "msys2-testing",
+            "configurePreset": "msys2-testing",
+            "displayName": "Build MSYS2 with Tests"
+        },
+        {
+            "name": "rpi-debug",
+            "configurePreset": "rpi-debug",
+            "displayName": "Build Raspberry Pi Debug"
+        },
+        {
+            "name": "rpi-release",
+            "configurePreset": "rpi-release",
+            "displayName": "Build Raspberry Pi Release"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "msys2-testing",
+            "configurePreset": "msys2-testing",
+            "displayName": "Run MSYS2 Tests",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}
