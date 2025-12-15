@@ -1,0 +1,738 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{bm}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+
+\geometry{margin=2.5cm, headheight=14pt}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=green!50!black,
+    urlcolor=blue!70!black
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{INS Error-State EKF}
+\lhead{Technical Reference}
+\rfoot{Page \thepage}
+
+% Math commands
+\newcommand{\mat}[1]{\mathbf{#1}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\quat}[1]{\mathbf{#1}}
+\newcommand{\skewmat}[1]{\left[#1 \times\right]}
+\newcommand{\Rn}{\mathbb{R}}
+
+\title{\textbf{Inertial Navigation System}\\[0.5em]
+\Large Error-State Extended Kalman Filter\\[0.3em]
+\large Based on Farrell's State Augmentation with NBK Error Model}
+\author{Technical Reference Document}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+%==============================================================================
+\section{Introduction}
+%==============================================================================
+
+This document derives an error-state Extended Kalman Filter (ES-EKF) for strapdown inertial navigation. The formulation follows J.A. Farrell's state augmentation methodology with the NBK stochastic error model, where parameters are determined via Allan variance analysis.
+
+\subsection{Error-State EKF Methodology}
+
+The ES-EKF maintains two parallel representations:
+
+\begin{enumerate}
+    \item \textbf{Nominal state} $\mat{x}$: The best estimate of the true state, propagated by nonlinear mechanization equations. Uses quaternion for attitude (4 parameters).
+    
+    \item \textbf{Error state} $\delta\mat{x}$: Small perturbations from the nominal state, estimated by the Kalman filter. Uses a minimal 3-parameter attitude error representation.
+\end{enumerate}
+
+This separation is essential because:
+\begin{itemize}
+    \item Quaternions provide singularity-free attitude representation but have 4 parameters for 3 degrees of freedom
+    \item The unit-norm constraint $\|\quat{q}\| = 1$ makes direct quaternion estimation problematic
+    \item A 3-parameter attitude error respects the 3 DOF of rotation and yields well-conditioned covariance matrices
+\end{itemize}
+
+\subsection{Notation}
+
+\begin{center}
+\begin{tabular}{ll}
+    \toprule
+    Symbol & Description \\
+    \midrule
+    $(\cdot)^b$ & Body frame quantity \\
+    $(\cdot)^n$ & Navigation frame (NED) quantity \\
+    $\mat{C}_b^n$ & Direction cosine matrix, body to navigation \\
+    $\quat{q}_b^n$ & Unit quaternion, body to navigation (Hamilton, scalar-last) \\
+    $\delta(\cdot)$ & Error in quantity \\
+    $\tilde{(\cdot)}$ & Measured (noisy) quantity \\
+    $\skewmat{\vect{a}}$ & Skew-symmetric matrix of vector $\vect{a}$ \\
+    $\otimes$ & Quaternion multiplication \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Quaternion Convention}
+
+Throughout this document, quaternions use the \textbf{Hamilton convention with scalar-last ordering}:
+\begin{equation}
+    \quat{q} = \begin{bmatrix} q_x \\ q_y \\ q_z \\ q_w \end{bmatrix} = \begin{bmatrix} \vect{q}_v \\ q_w \end{bmatrix}
+\end{equation}
+where $\vect{q}_v \in \Rn^3$ is the vector part and $q_w \in \Rn$ is the scalar part. The quaternion satisfies $\|\quat{q}\|^2 = q_x^2 + q_y^2 + q_z^2 + q_w^2 = 1$.
+
+%==============================================================================
+\section{State Definitions}
+%==============================================================================
+
+\subsection{Nominal State (16 parameters)}
+
+The nominal state vector propagated by the mechanization:
+\begin{equation}
+    \mat{x} = \begin{bmatrix} \mat{r} \\ \mat{v}^n \\ \quat{q}_b^n \\ \mat{b}_a \\ \mat{b}_g \end{bmatrix} \in \Rn^{16}
+\end{equation}
+
+\begin{center}
+\begin{tabular}{clcc}
+    \toprule
+    Index & Component & Symbol & Dimension \\
+    \midrule
+    0--2 & Geodetic position & $\mat{r} = [\phi, \lambda, h]^T$ & 3 \\
+    3--5 & NED velocity & $\mat{v}^n = [v_N, v_E, v_D]^T$ & 3 \\
+    6--9 & Attitude quaternion & $\quat{q}_b^n = [q_x, q_y, q_z, q_w]^T$ & 4 \\
+    10--12 & Accelerometer bias & $\mat{b}_a = [b_{ax}, b_{ay}, b_{az}]^T$ & 3 \\
+    13--15 & Gyroscope bias & $\mat{b}_g = [b_{gx}, b_{gy}, b_{gz}]^T$ & 3 \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Error State (21 parameters)}
+
+The error state estimated by the Kalman filter:
+\begin{equation}
+    \delta\mat{x} = \begin{bmatrix} \delta\mat{r} \\ \delta\mat{v}^n \\ \vect{\theta} \\ \delta\mat{b}_a \\ \delta\mat{b}_g \end{bmatrix} \in \Rn^{21}
+\end{equation}
+
+\begin{center}
+\begin{tabular}{clcc}
+    \toprule
+    Index & Component & Symbol & Dimension \\
+    \midrule
+    0--2 & Position error & $\delta\mat{r} = [\delta\phi, \delta\lambda, \delta h]^T$ & 3 \\
+    3--5 & Velocity error & $\delta\mat{v}^n = [\delta v_N, \delta v_E, \delta v_D]^T$ & 3 \\
+    6--8 & Attitude error & $\vect{\theta} = [\theta_N, \theta_E, \theta_D]^T$ & 3 \\
+    9--11 & Accel bias error & $\delta\mat{b}_a$ & 3 \\
+    12--14 & Gyro bias error & $\delta\mat{b}_g$ & 3 \\
+    15--17 & Accel bias (stochastic) & $\mat{b}_a^z$ & 3 \\
+    18--20 & Gyro bias (stochastic) & $\mat{b}_g^z$ & 3 \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Note}: Following Farrell's state augmentation, the bias states appear twice: as errors in the nominal bias estimates ($\delta\mat{b}_a$, $\delta\mat{b}_g$) and as stochastic states driven by rate random walk ($\mat{b}_a^z$, $\mat{b}_g^z$). For the simplified NBK model where biases are modeled as pure random walks, these can be combined, yielding an error state in $\Rn^{15}$. This document presents the full augmented form.
+
+\textbf{Simplified 15-state formulation}: If we model biases directly as random walk without separate deterministic error:
+\begin{equation}
+    \delta\mat{x} = \begin{bmatrix} \delta\mat{r} \\ \delta\mat{v}^n \\ \vect{\theta} \\ \mat{b}_a \\ \mat{b}_g \end{bmatrix} \in \Rn^{15}
+\end{equation}
+This is the formulation used in the remainder of this document.
+
+\subsection{Attitude Error and Quaternion Correction}
+
+The attitude error vector $\vect{\theta} \in \Rn^3$ represents a small rotation. The error quaternion is constructed as:
+\begin{equation}
+    \delta\quat{q} = \begin{bmatrix} \frac{1}{2}\vect{\theta} \\ 1 \end{bmatrix} \cdot \frac{1}{\sqrt{1 + \frac{1}{4}\|\vect{\theta}\|^2}}
+    \label{eq:error_quat}
+\end{equation}
+
+For small errors, this simplifies to:
+\begin{equation}
+    \delta\quat{q} \approx \begin{bmatrix} \frac{1}{2}\vect{\theta} \\ 1 \end{bmatrix}
+\end{equation}
+
+The corrected quaternion after a Kalman update:
+\begin{equation}
+    \quat{q}^+ = \delta\quat{q} \otimes \quat{q}^-
+    \label{eq:quat_correction}
+\end{equation}
+
+After correction, the quaternion must be renormalized: $\quat{q}^+ \leftarrow \quat{q}^+ / \|\quat{q}^+\|$.
+
+%==============================================================================
+\section{Quaternion Operations}
+%==============================================================================
+
+\subsection{Quaternion Product}
+
+For quaternions $\quat{p} = [\vect{p}_v^T, p_w]^T$ and $\quat{q} = [\vect{q}_v^T, q_w]^T$:
+\begin{equation}
+    \quat{p} \otimes \quat{q} = \begin{bmatrix}
+        p_w \vect{q}_v + q_w \vect{p}_v + \vect{p}_v \times \vect{q}_v \\
+        p_w q_w - \vect{p}_v \cdot \vect{q}_v
+    \end{bmatrix}
+\end{equation}
+
+In matrix form:
+\begin{equation}
+    \quat{p} \otimes \quat{q} = \mat{L}(\quat{p}) \quat{q} = \mat{R}(\quat{q}) \quat{p}
+\end{equation}
+
+where:
+\begin{align}
+    \mat{L}(\quat{p}) &= \begin{bmatrix}
+        p_w \mat{I}_3 + \skewmat{\vect{p}_v} & \vect{p}_v \\
+        -\vect{p}_v^T & p_w
+    \end{bmatrix} \\
+    \mat{R}(\quat{q}) &= \begin{bmatrix}
+        q_w \mat{I}_3 - \skewmat{\vect{q}_v} & \vect{q}_v \\
+        -\vect{q}_v^T & q_w
+    \end{bmatrix}
+\end{align}
+
+\subsection{Quaternion to DCM}
+
+The direction cosine matrix from quaternion:
+\begin{equation}
+    \mat{C}_b^n = (q_w^2 - \vect{q}_v^T\vect{q}_v)\mat{I}_3 + 2\vect{q}_v\vect{q}_v^T + 2q_w\skewmat{\vect{q}_v}
+\end{equation}
+
+Expanded:
+\begin{equation}
+    \mat{C}_b^n = \begin{bmatrix}
+        1-2(q_y^2+q_z^2) & 2(q_xq_y-q_zq_w) & 2(q_xq_z+q_yq_w) \\
+        2(q_xq_y+q_zq_w) & 1-2(q_x^2+q_z^2) & 2(q_yq_z-q_xq_w) \\
+        2(q_xq_z-q_yq_w) & 2(q_yq_z+q_xq_w) & 1-2(q_x^2+q_y^2)
+    \end{bmatrix}
+    \label{eq:quat_to_dcm}
+\end{equation}
+
+\subsection{Quaternion Kinematics}
+
+The quaternion rate equation:
+\begin{equation}
+    \dot{\quat{q}}_b^n = \frac{1}{2} \quat{q}_b^n \otimes \quat{\omega}_{nb}^b
+    \label{eq:quat_kinematics}
+\end{equation}
+
+where $\quat{\omega}_{nb}^b = [\vect{\omega}_{nb}^{b\,T}, 0]^T$ is the angular velocity as a pure quaternion, and:
+\begin{equation}
+    \vect{\omega}_{nb}^b = \vect{\omega}_{ib}^b - \mat{C}_n^b \vect{\omega}_{in}^n
+\end{equation}
+
+In matrix form:
+\begin{equation}
+    \dot{\quat{q}}_b^n = \frac{1}{2} \mat{\Omega}(\vect{\omega}_{nb}^b) \quat{q}_b^n
+\end{equation}
+
+with:
+\begin{equation}
+    \mat{\Omega}(\vect{\omega}) = \begin{bmatrix}
+        -\skewmat{\vect{\omega}} & \vect{\omega} \\
+        -\vect{\omega}^T & 0
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Skew-Symmetric Matrix}
+
+For $\vect{a} = [a_1, a_2, a_3]^T$:
+\begin{equation}
+    \skewmat{\vect{a}} = \begin{bmatrix}
+        0 & -a_3 & a_2 \\
+        a_3 & 0 & -a_1 \\
+        -a_2 & a_1 & 0
+    \end{bmatrix}
+\end{equation}
+
+Property: $\skewmat{\vect{a}}\vect{b} = \vect{a} \times \vect{b}$
+
+%==============================================================================
+\section{Continuous-Time Error Dynamics}
+%==============================================================================
+
+The linearized error-state dynamics:
+\begin{equation}
+    \delta\dot{\mat{x}} = \mat{F}\,\delta\mat{x} + \mat{G}\mat{w}
+    \label{eq:error_dynamics}
+\end{equation}
+
+where $\mat{w}$ is white noise with spectral density $\mat{Q}_c$.
+
+\subsection{System Matrix Structure}
+
+The $15 \times 15$ system matrix:
+\begin{equation}
+    \mat{F} = \begin{bmatrix}
+        \mat{F}_{rr} & \mat{F}_{rv} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} \\
+        \mat{F}_{vr} & \mat{F}_{vv} & \mat{F}_{v\theta} & \mat{C}_b^n & \mat{0}_{3\times3} \\
+        \mat{F}_{\theta r} & \mat{F}_{\theta v} & \mat{F}_{\theta\theta} & \mat{0}_{3\times3} & -\mat{C}_b^n \\
+        \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} \\
+        \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3}
+    \end{bmatrix}
+    \label{eq:F_matrix}
+\end{equation}
+
+State indices: $\delta\mat{r}$ (0:3), $\delta\mat{v}$ (3:6), $\vect{\theta}$ (6:9), $\mat{b}_a$ (9:12), $\mat{b}_g$ (12:15).
+
+\subsection{Position Error Dynamics}
+
+Position rate depends on velocity:
+\begin{equation}
+    \mat{F}_{rr} = \begin{bmatrix}
+        0 & 0 & \dfrac{-v_N}{(R_M+h)^2} \\[1em]
+        \dfrac{v_E \tan\phi \sec\phi}{R_N+h} & 0 & \dfrac{-v_E \sec\phi}{(R_N+h)^2} \\[1em]
+        0 & 0 & 0
+    \end{bmatrix}
+\end{equation}
+
+\begin{equation}
+    \mat{F}_{rv} = \begin{bmatrix}
+        \dfrac{1}{R_M+h} & 0 & 0 \\[1em]
+        0 & \dfrac{\sec\phi}{R_N+h} & 0 \\[1em]
+        0 & 0 & -1
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Velocity Error Dynamics}
+
+The attitude error couples to velocity via specific force:
+\begin{equation}
+    \mat{F}_{v\theta} = -\skewmat{\mat{f}^n} = \begin{bmatrix}
+        0 & f_D & -f_E \\
+        -f_D & 0 & f_N \\
+        f_E & -f_N & 0
+    \end{bmatrix}
+\end{equation}
+
+where $\mat{f}^n = \mat{C}_b^n (\tilde{\mat{f}}^b - \mat{b}_a)$ is specific force in navigation frame.
+
+The accelerometer bias couples directly:
+\begin{equation}
+    \mat{F}_{v,b_a} = \mat{C}_b^n
+\end{equation}
+
+\subsection{Attitude Error Dynamics}
+
+\begin{equation}
+    \mat{F}_{\theta\theta} = -\skewmat{\vect{\omega}_{in}^n}
+\end{equation}
+
+The gyroscope bias couples as:
+\begin{equation}
+    \mat{F}_{\theta,b_g} = -\mat{C}_b^n
+\end{equation}
+
+\subsection{Navigation Frame Rotation Rates}
+
+Earth rate in navigation frame:
+\begin{equation}
+    \vect{\omega}_{ie}^n = \begin{bmatrix}
+        \omega_e \cos\phi \\ 0 \\ -\omega_e \sin\phi
+    \end{bmatrix}, \quad \omega_e = \SI{7.292115e-5}{\radian\per\second}
+\end{equation}
+
+Transport rate:
+\begin{equation}
+    \vect{\omega}_{en}^n = \begin{bmatrix}
+        \dfrac{v_E}{R_N + h} \\[1em]
+        \dfrac{-v_N}{R_M + h} \\[1em]
+        \dfrac{-v_E \tan\phi}{R_N + h}
+    \end{bmatrix}
+\end{equation}
+
+Total rotation:
+\begin{equation}
+    \vect{\omega}_{in}^n = \vect{\omega}_{ie}^n + \vect{\omega}_{en}^n
+\end{equation}
+
+\subsection{Earth Ellipsoid Parameters}
+
+\begin{align}
+    R_0 &= \SI{6378137.0}{\meter} & &\text{(semi-major axis)} \\
+    e^2 &= 0.00669437999014 & &\text{(first eccentricity squared)} \\
+    R_M &= \frac{R_0(1-e^2)}{(1 - e^2\sin^2\phi)^{3/2}} & &\text{(meridian radius)} \\
+    R_N &= \frac{R_0}{\sqrt{1 - e^2\sin^2\phi}} & &\text{(prime vertical radius)}
+\end{align}
+
+%==============================================================================
+\section{IMU Stochastic Error Model (NBK)}
+%==============================================================================
+
+\subsection{Allan Variance Parameters}
+
+From Farrell's Table 1, the dominant error sources characterized by Allan variance:
+
+\begin{center}
+\begin{tabular}{llll}
+    \toprule
+    \textbf{Parameter} & \textbf{Symbol} & \textbf{Accel Units} & \textbf{Gyro Units} \\
+    \midrule
+    Velocity/Angle Random Walk & $N$ & \si{\meter\per\second\per\sqrt{\hour}} & \si{\degree\per\sqrt{\hour}} \\
+    Bias Instability & $B$ & \si{\micro g} & \si{\degree\per\hour} \\
+    Accel/Rate Random Walk & $K$ & \si{\micro g\per\sqrt{\second}} & \si{\degree\per\hour\per\sqrt{\second}} \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Allan Variance Expressions}
+
+\begin{align}
+    \text{Random Walk:} \quad \sigma^2(\tau) &= \frac{N^2}{\tau} \\
+    \text{Bias Instability:} \quad \sigma^2(\tau) &= \frac{2B^2 \ln 2}{\pi} \quad \text{(at minimum)} \\
+    \text{Rate Random Walk:} \quad \sigma^2(\tau) &= \frac{K^2 \tau}{3}
+\end{align}
+
+\subsection{Stochastic Model}
+
+For the NBK model, sensor biases follow a random walk driven by rate random walk $K$:
+\begin{align}
+    \dot{\mat{b}}_a &= \mat{w}_{K_a}, \quad E[\mat{w}_{K_a}\mat{w}_{K_a}^T] = \text{diag}(K_{ax}^2, K_{ay}^2, K_{az}^2)\,\delta(t-\tau) \\
+    \dot{\mat{b}}_g &= \mat{w}_{K_g}, \quad E[\mat{w}_{K_g}\mat{w}_{K_g}^T] = \text{diag}(K_{gx}^2, K_{gy}^2, K_{gz}^2)\,\delta(t-\tau)
+\end{align}
+
+The measurement model includes additive white noise:
+\begin{align}
+    \tilde{\mat{f}}^b &= \mat{f}^b + \mat{b}_a + \vect{\eta}_a \\
+    \tilde{\vect{\omega}}^b &= \vect{\omega}^b + \mat{b}_g + \vect{\eta}_g
+\end{align}
+
+where $\vect{\eta}_a$, $\vect{\eta}_g$ are white noise with PSDs $N_a^2$, $N_g^2$.
+
+%==============================================================================
+\section{Noise Input Matrix and Spectral Density}
+%==============================================================================
+
+\subsection{Noise Input Matrix}
+
+The $15 \times 12$ matrix mapping noise to error states:
+\begin{equation}
+    \mat{G} = \begin{bmatrix}
+        \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} \\
+        \mat{C}_b^n & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} \\
+        \mat{0}_{3\times3} & -\mat{C}_b^n & \mat{0}_{3\times3} & \mat{0}_{3\times3} \\
+        \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{I}_{3} & \mat{0}_{3\times3} \\
+        \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{0}_{3\times3} & \mat{I}_{3}
+    \end{bmatrix}
+    \label{eq:G_matrix}
+\end{equation}
+
+Column assignments:
+\begin{center}
+\begin{tabular}{cl}
+    \toprule
+    Columns & Noise Source \\
+    \midrule
+    0--2 & Accelerometer white noise $\vect{\eta}_a$ \\
+    3--5 & Gyroscope white noise $\vect{\eta}_g$ \\
+    6--8 & Accelerometer rate random walk $\mat{w}_{K_a}$ \\
+    9--11 & Gyroscope rate random walk $\mat{w}_{K_g}$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Continuous Spectral Density}
+
+The $12 \times 12$ spectral density:
+\begin{equation}
+    \mat{Q}_c = \text{diag}\left(
+        N_{ax}^2, N_{ay}^2, N_{az}^2,
+        N_{gx}^2, N_{gy}^2, N_{gz}^2,
+        K_{ax}^2, K_{ay}^2, K_{az}^2,
+        K_{gx}^2, K_{gy}^2, K_{gz}^2
+    \right)
+    \label{eq:Qc}
+\end{equation}
+
+\subsection{Unit Conversions}
+
+For accelerometer data in $g$ and gyroscope data in \si{\radian\per\second}:
+\begin{align}
+    N_a^{\text{SI}} &= N_a^{(g)} \cdot g_0, \quad g_0 = \SI{9.80665}{\meter\per\second\squared} \\
+    K_a^{\text{SI}} &= K_a^{(g)} \cdot g_0
+\end{align}
+
+Gyroscope parameters in \si{\radian\per\second} require no conversion.
+
+%==============================================================================
+\section{Van Loan Discretization}
+%==============================================================================
+
+The Van Loan method computes the exact discrete-time state transition matrix $\vect{\Phi}$ and process noise covariance $\mat{Q}_d$ from the continuous system.
+
+\subsection{Construction}
+
+Form the $2n \times 2n$ matrix ($n = 15$):
+\begin{equation}
+    \mat{A} = \begin{bmatrix}
+        -\mat{F} & \mat{G}\mat{Q}_c\mat{G}^T \\
+        \mat{0}_{n\times n} & \mat{F}^T
+    \end{bmatrix} \Delta t
+    \label{eq:van_loan_A}
+\end{equation}
+
+\subsection{Matrix Exponential}
+
+Compute:
+\begin{equation}
+    \mat{B} = \exp(\mat{A}) = \begin{bmatrix}
+        \mat{B}_{11} & \mat{B}_{12} \\
+        \mat{0} & \mat{B}_{22}
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Extract Discrete Quantities}
+
+\begin{align}
+    \vect{\Phi} &= \mat{B}_{22}^T \label{eq:Phi_extract} \\
+    \mat{Q}_d &= \vect{\Phi} \mat{B}_{12} \label{eq:Qd_extract}
+\end{align}
+
+Symmetrize: $\mat{Q}_d \leftarrow \frac{1}{2}(\mat{Q}_d + \mat{Q}_d^T)$
+
+\subsection{Process Noise Projection}
+
+The $15 \times 15$ matrix $\mat{G}\mat{Q}_c\mat{G}^T$:
+\begin{equation}
+    \mat{G}\mat{Q}_c\mat{G}^T = \begin{bmatrix}
+        \mat{0}_{3\times3} & & & & \\
+        & \mat{C}_b^n\mat{Q}_{N_a}\mat{C}_n^b & & & \\
+        & & \mat{C}_b^n\mat{Q}_{N_g}\mat{C}_n^b & & \\
+        & & & \mat{Q}_{K_a} & \\
+        & & & & \mat{Q}_{K_g}
+    \end{bmatrix}
+\end{equation}
+
+where off-diagonal blocks are zero and:
+\begin{align}
+    \mat{Q}_{N_a} &= \text{diag}(N_{ax}^2, N_{ay}^2, N_{az}^2) \\
+    \mat{Q}_{N_g} &= \text{diag}(N_{gx}^2, N_{gy}^2, N_{gz}^2) \\
+    \mat{Q}_{K_a} &= \text{diag}(K_{ax}^2, K_{ay}^2, K_{az}^2) \\
+    \mat{Q}_{K_g} &= \text{diag}(K_{gx}^2, K_{gy}^2, K_{gz}^2)
+\end{align}
+
+%==============================================================================
+\section{Measurement Models}
+%==============================================================================
+
+All measurements relate to the error state via:
+\begin{equation}
+    \mat{z} = \mat{H}\,\delta\mat{x} + \vect{\nu}
+\end{equation}
+
+where $\vect{\nu}$ is measurement noise with covariance $\mat{R}$.
+
+\subsection{GNSS Position}
+
+Innovation:
+\begin{equation}
+    \mat{z}_{\text{pos}} = \mat{r}_{\text{GNSS}} - \hat{\mat{r}}_{\text{INS}}
+\end{equation}
+
+Observation matrix ($3 \times 15$):
+\begin{equation}
+    \mat{H}_{\text{pos}} = \begin{bmatrix}
+        \mat{I}_{3} & \mat{0}_{3\times12}
+    \end{bmatrix}
+\end{equation}
+
+\subsection{GNSS Velocity}
+
+Innovation:
+\begin{equation}
+    \mat{z}_{\text{vel}} = \mat{v}_{\text{GNSS}}^n - \hat{\mat{v}}_{\text{INS}}^n
+\end{equation}
+
+Observation matrix ($3 \times 15$):
+\begin{equation}
+    \mat{H}_{\text{vel}} = \begin{bmatrix}
+        \mat{0}_{3\times3} & \mat{I}_{3} & \mat{0}_{3\times9}
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Barometric Altitude}
+
+From pressure $p$ in \si{\hecto\pascal}:
+\begin{equation}
+    h_{\text{baro}} = \frac{T_0}{L}\left[1 - \left(\frac{p}{p_0}\right)^{\frac{LR}{gM}}\right]
+\end{equation}
+
+with $T_0 = \SI{288.15}{\kelvin}$, $L = \SI{0.0065}{\kelvin\per\meter}$, $p_0 = \SI{1013.25}{\hecto\pascal}$.
+
+Innovation:
+\begin{equation}
+    z_{\text{baro}} = h_{\text{baro}} - \hat{h}_{\text{INS}}
+\end{equation}
+
+Observation matrix ($1 \times 15$):
+\begin{equation}
+    \mat{H}_{\text{baro}} = \begin{bmatrix}
+        0 & 0 & 1 & \mat{0}_{1\times12}
+    \end{bmatrix}
+\end{equation}
+
+\subsection{Zero Velocity Update (ZUPT)}
+
+When stationary (detected via gyro/accel magnitude):
+\begin{equation}
+    \mat{z}_{\text{ZUPT}} = \mat{0}_{3\times1} - \hat{\mat{v}}_{\text{INS}}^n
+\end{equation}
+
+Uses $\mat{H}_{\text{vel}}$.
+
+%==============================================================================
+\section{EKF Algorithm}
+%==============================================================================
+
+\subsection{Initialization}
+
+\begin{enumerate}
+    \item Set initial position from GNSS or known location
+    \item Initialize velocity to zero (static alignment) or from GNSS
+    \item Compute initial quaternion from accelerometer (gravity) and optionally magnetometer
+    \item Set initial biases to zero or from calibration
+    \item Initialize $\mat{P}_0$ with appropriate uncertainties
+\end{enumerate}
+
+\subsection{Prediction Step}
+
+For each IMU sample at rate $f_s = 1/\Delta t$:
+
+\begin{enumerate}
+    \item \textbf{Correct measurements}:
+    \begin{align}
+        \mat{f}^b &= \tilde{\mat{f}}^b - \hat{\mat{b}}_a \\
+        \vect{\omega}^b &= \tilde{\vect{\omega}}^b - \hat{\mat{b}}_g
+    \end{align}
+    
+    \item \textbf{Propagate nominal state} via strapdown mechanization:
+    \begin{align}
+        \quat{q}_{k+1} &= \quat{q}_k \otimes \Delta\quat{q}(\vect{\omega}_{nb}^b, \Delta t) \\
+        \mat{v}_{k+1}^n &= \mat{v}_k^n + (\mat{C}_b^n \mat{f}^b + \mat{g}^n - (2\vect{\omega}_{ie}^n + \vect{\omega}_{en}^n) \times \mat{v}_k^n)\Delta t \\
+        \mat{r}_{k+1} &= \mat{r}_k + \mat{F}_{rv}^{-1}\mat{v}_k^n \Delta t
+    \end{align}
+    
+    \item \textbf{Build $\mat{F}$, $\mat{G}$, $\mat{Q}_c$} at current state
+    
+    \item \textbf{Van Loan discretization} $\rightarrow$ $\vect{\Phi}$, $\mat{Q}_d$
+    
+    \item \textbf{Propagate covariance}:
+    \begin{equation}
+        \mat{P}_{k+1}^- = \vect{\Phi}\mat{P}_k^+\vect{\Phi}^T + \mat{Q}_d
+    \end{equation}
+\end{enumerate}
+
+\subsection{Update Step}
+
+When measurement available:
+
+\begin{enumerate}
+    \item \textbf{Compute innovation}:
+    \begin{equation}
+        \mat{y} = \mat{z} - \mat{H}\hat{\mat{x}}^-
+    \end{equation}
+    
+    \item \textbf{Innovation covariance}:
+    \begin{equation}
+        \mat{S} = \mat{H}\mat{P}^-\mat{H}^T + \mat{R}
+    \end{equation}
+    
+    \item \textbf{Kalman gain}:
+    \begin{equation}
+        \mat{K} = \mat{P}^-\mat{H}^T\mat{S}^{-1}
+    \end{equation}
+    
+    \item \textbf{Error state estimate}:
+    \begin{equation}
+        \delta\hat{\mat{x}} = \mat{K}\mat{y}
+    \end{equation}
+    
+    \item \textbf{Apply corrections to nominal state}:
+    \begin{align}
+        \mat{r}^+ &= \mat{r}^- + \delta\mat{r} \\
+        \mat{v}^+ &= \mat{v}^- + \delta\mat{v} \\
+        \quat{q}^+ &= \delta\quat{q}(\vect{\theta}) \otimes \quat{q}^- \quad \text{(see Eq.~\ref{eq:error_quat}, \ref{eq:quat_correction})} \\
+        \mat{b}_a^+ &= \mat{b}_a^- + \delta\mat{b}_a \\
+        \mat{b}_g^+ &= \mat{b}_g^- + \delta\mat{b}_g
+    \end{align}
+    
+    \item \textbf{Normalize quaternion}: $\quat{q}^+ \leftarrow \quat{q}^+ / \|\quat{q}^+\|$
+    
+    \item \textbf{Update covariance} (Joseph form for numerical stability):
+    \begin{equation}
+        \mat{P}^+ = (\mat{I} - \mat{K}\mat{H})\mat{P}^-(\mat{I} - \mat{K}\mat{H})^T + \mat{K}\mat{R}\mat{K}^T
+    \end{equation}
+    
+    \item \textbf{Symmetrize}: $\mat{P}^+ \leftarrow \frac{1}{2}(\mat{P}^+ + \mat{P}^{+T})$
+    
+    \item \textbf{Reset error state} to zero (errors absorbed into nominal)
+\end{enumerate}
+
+%==============================================================================
+\section{Implementation Checklist}
+%==============================================================================
+
+\begin{enumerate}
+    \item[$\square$] Quaternion convention consistent (scalar-last, Hamilton)
+    \item[$\square$] DCM formula matches quaternion convention (Eq.~\ref{eq:quat_to_dcm})
+    \item[$\square$] Error quaternion composition order correct (Eq.~\ref{eq:quat_correction})
+    \item[$\square$] Units converted: accel from $g$ to \si{\meter\per\second\squared}
+    \item[$\square$] Units converted: gyro already in \si{\radian\per\second}
+    \item[$\square$] Pressure converted to altitude for baro updates
+    \item[$\square$] Quaternion normalized after each correction
+    \item[$\square$] Covariance symmetrized after each update
+    \item[$\square$] F matrix updated at each time step (depends on current state)
+    \item[$\square$] G matrix updated at each time step (depends on $\mat{C}_b^n$)
+\end{enumerate}
+
+%==============================================================================
+\section{State Dimension Summary}
+%==============================================================================
+
+\begin{center}
+\begin{tabular}{lcc}
+    \toprule
+    & Nominal State & Error State \\
+    \midrule
+    Position & 3 & 3 \\
+    Velocity & 3 & 3 \\
+    Attitude & 4 (quaternion) & 3 (rotation vector) \\
+    Accel bias & 3 & 3 \\
+    Gyro bias & 3 & 3 \\
+    \midrule
+    \textbf{Total} & \textbf{16} & \textbf{15} \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+The dimension difference arises because:
+\begin{itemize}
+    \item The quaternion has 4 parameters but only 3 degrees of freedom (unit norm constraint)
+    \item The error state uses a minimal 3-parameter rotation representation
+    \item This is the standard error-state EKF approach for quaternion-based systems
+\end{itemize}
+
+%==============================================================================
+\section{References}
+%==============================================================================
+
+\begin{enumerate}
+    \item J.A. Farrell, ``Aided Navigation: GPS with High Rate Sensors,'' McGraw-Hill, 2008.
+    \item J. Sol\`{a}, ``Quaternion kinematics for the error-state Kalman filter,'' arXiv:1711.02508, 2017.
+    \item P.D. Groves, ``Principles of GNSS, Inertial, and Multisensor Integrated Navigation Systems,'' 2nd ed., Artech House, 2013.
+    \item IEEE Std 952-1997, ``IEEE Standard Specification Format Guide and Test Procedure for Single-Axis Interferometric Fiber Optic Gyros.''
+\end{enumerate}
+
+\end{document}

@@ -29,22 +29,26 @@ include_directories(${CMAKE_SOURCE_DIR}/shared)
 
 # Main executable (only for RPI/Linux with RTIMULib)
 if(RPI_BUILD)
-    add_executable(ins_runner rpi/main.cpp)
+    add_executable(ins_runner rpi/main.cpp shared/eskf.cpp)
     target_link_libraries(ins_runner RTIMULib Eigen3::Eigen)
-    
-    # Sense Hat Logger executable 
-    add_executable(sense_hat_logger rpi/sense_hat_logger.cpp)
+
+    # Sense Hat Logger executable
+    add_executable(sense_hat_logger rpi/sense_hat_logger.cpp shared/eskf.cpp)
     target_link_libraries(sense_hat_logger RTIMULib Eigen3::Eigen)
 endif()
 
 # Testing configuration
 if(BUILD_TESTING)
     find_package(GTest REQUIRED)
-    
+
+    set(TEST_SOURCES
+        tests/test_eskf.cpp
+        shared/eskf.cpp
+    )
+
     # Create test executable
     add_executable(eskf_tests 
-        tests/test_eskf_unit.cpp
-        tests/test_eskf_integration.cpp
+        ${TEST_SOURCES}
     )
     
     # Link libraries
