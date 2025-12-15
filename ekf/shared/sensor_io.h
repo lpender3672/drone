@@ -95,8 +95,7 @@ public:
     SensorReader(const std::string& filename) {
         file_.open(filename);
         if (!file_.is_open()) {
-            throw std::runtime_error("Failed to open file: " + 
-                         std::filesystem::absolute(filename).string());
+            throw std::runtime_error("Failed to open file: " + filename);
         }
         // Skip header line
         std::string header;
