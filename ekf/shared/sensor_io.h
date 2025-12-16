@@ -8,9 +8,10 @@
 #include <vector>
 #include <Eigen/Dense>
 #include <filesystem>
+#include <iostream>
 
 // Structure to hold sensor data for one timestep
-struct SensorData {
+struct IMUData {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     double timestamp;
@@ -19,7 +20,7 @@ struct SensorData {
     Eigen::Vector3d mag;      // Magnetometer (uT)
     double pressure;          // Pressure (hPa)
     
-    SensorData() : timestamp(0.0), pressure(0.0) {
+    IMUData() : timestamp(0.0), pressure(0.0) {
         accel.setZero();
         gyro.setZero();
         mag.setZero();
@@ -46,6 +47,92 @@ struct INSData {
     }
 };
 
+
+/**
+ * Structure to hold GPS data from Neo M9N module
+ */
+struct GPSData {
+    // Time information
+    double timestamp;           // System timestamp (seconds)
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint32_t nanosecond;
+    
+    // Position (WGS84)
+    double latitude;            // degrees
+    double longitude;           // degrees
+    double altitude_msl;        // meters above mean sea level
+    double altitude_ellipsoid;  // meters above ellipsoid
+    
+    // Velocity
+    double velocity_north;      // m/s
+    double velocity_east;       // m/s
+    double velocity_down;       // m/s
+    double ground_speed;        // m/s
+    double heading_motion;      // degrees
+    
+    // Accuracy estimates
+    float horizontal_accuracy;  // meters
+    float vertical_accuracy;    // meters
+    float speed_accuracy;       // m/s
+    float heading_accuracy;     // degrees
+    
+    // Fix information
+    uint8_t fix_type;          // 0=no fix, 2=2D, 3=3D, 4=GNSS+DR, 5=Time only
+    uint8_t num_satellites;    // Number of satellites used
+    float pdop;                // Position dilution of precision
+    
+    // Status flags
+    bool valid_time;
+    bool valid_date;
+    bool valid_position;
+    bool valid_velocity;
+    bool gnss_fix_ok;
+    bool diff_correction;      // Differential corrections applied
+    
+    GPSData() {
+        timestamp = 0.0;
+        year = 0;
+        month = 0;
+        day = 0;
+        hour = 0;
+        minute = 0;
+        second = 0;
+        nanosecond = 0;
+        
+        latitude = 0.0;
+        longitude = 0.0;
+        altitude_msl = 0.0;
+        altitude_ellipsoid = 0.0;
+        
+        velocity_north = 0.0;
+        velocity_east = 0.0;
+        velocity_down = 0.0;
+        ground_speed = 0.0;
+        heading_motion = 0.0;
+        
+        horizontal_accuracy = 0.0f;
+        vertical_accuracy = 0.0f;
+        speed_accuracy = 0.0f;
+        heading_accuracy = 0.0f;
+        
+        fix_type = 0;
+        num_satellites = 0;
+        pdop = 99.9f;
+        
+        valid_time = false;
+        valid_date = false;
+        valid_position = false;
+        valid_velocity = false;
+        gnss_fix_ok = false;
+        diff_correction = false;
+    }
+};
+
 // Class for writing sensor data to CSV
 class SensorWriter {
 public:
@@ -66,7 +153,7 @@ public:
         }
     }
     
-    void write(const SensorData& data) {
+    void write(const IMUData& data) {
         file_ << std::fixed << std::setprecision(6) 
               << data.timestamp << ","
               << data.accel.x() << "," << data.accel.y() << "," << data.accel.z() << ","
@@ -108,7 +195,7 @@ public:
         }
     }
     
-    bool read(SensorData& data) {
+    bool read(IMUData& data) {
         std::string line;
         if (!std::getline(file_, line)) {
             return false;
@@ -242,6 +329,85 @@ public:
     
 private:
     std::ifstream file_;
+};
+
+// GPS data CSV writer class
+class GPSWriter {
+public:
+    GPSWriter(const std::string& filename) : filename_(filename) {
+        file_.open(filename);
+        if (!file_.is_open()) {
+            std::cerr << "Failed to open file: " << filename << std::endl;
+            return;
+        }
+        
+        // Write CSV header
+        file_ << "timestamp,latitude,longitude,altitude_msl,altitude_ellipsoid,"
+              << "vel_north,vel_east,vel_down,ground_speed,heading,"
+              << "h_accuracy,v_accuracy,speed_accuracy,heading_accuracy,"
+              << "fix_type,num_sats,pdop,"
+              << "year,month,day,hour,minute,second,nanosecond,"
+              << "valid_time,valid_date,valid_position,valid_velocity,gnss_fix_ok,diff_correction"
+              << std::endl;
+    }
+    
+    ~GPSWriter() {
+        if (file_.is_open()) {
+            file_.close();
+        }
+    }
+    
+    void write(const GPSData& data) {
+        if (!file_.is_open()) {
+            return;
+        }
+        
+        file_ << std::fixed << std::setprecision(9);
+        file_ << data.timestamp << ","
+              << data.latitude << ","
+              << data.longitude << ","
+              << std::setprecision(3)
+              << data.altitude_msl << ","
+              << data.altitude_ellipsoid << ","
+              << std::setprecision(4)
+              << data.velocity_north << ","
+              << data.velocity_east << ","
+              << data.velocity_down << ","
+              << data.ground_speed << ","
+              << std::setprecision(2)
+              << data.heading_motion << ","
+              << data.horizontal_accuracy << ","
+              << data.vertical_accuracy << ","
+              << data.speed_accuracy << ","
+              << data.heading_accuracy << ","
+              << (int)data.fix_type << ","
+              << (int)data.num_satellites << ","
+              << data.pdop << ","
+              << data.year << ","
+              << (int)data.month << ","
+              << (int)data.day << ","
+              << (int)data.hour << ","
+              << (int)data.minute << ","
+              << (int)data.second << ","
+              << data.nanosecond << ","
+              << data.valid_time << ","
+              << data.valid_date << ","
+              << data.valid_position << ","
+              << data.valid_velocity << ","
+              << data.gnss_fix_ok << ","
+              << data.diff_correction
+              << std::endl;
+        
+        file_.flush();
+    }
+    
+    bool isOpen() const {
+        return file_.is_open();
+    }
+
+private:
+    std::string filename_;
+    std::ofstream file_;
 };
 
 #endif // SENSOR_IO_H

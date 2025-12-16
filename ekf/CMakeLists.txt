@@ -29,12 +29,19 @@ include_directories(${CMAKE_SOURCE_DIR}/shared)
 
 # Main executable (only for RPI/Linux with RTIMULib)
 if(RPI_BUILD)
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1")
+
     add_executable(ins_runner rpi/main.cpp shared/eskf.cpp)
     target_link_libraries(ins_runner RTIMULib Eigen3::Eigen)
 
     # Sense Hat Logger executable
     add_executable(sense_hat_logger rpi/sense_hat_logger.cpp shared/eskf.cpp)
     target_link_libraries(sense_hat_logger RTIMULib Eigen3::Eigen)
+
+    # GPS Logger executable
+    add_executable(gps_logger rpi/gps_logger.cpp rpi/gps_interface.cpp)
+    target_link_libraries(gps_logger)
 endif()
 
 # Testing configuration

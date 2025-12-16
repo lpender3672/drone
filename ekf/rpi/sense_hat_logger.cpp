@@ -82,7 +82,7 @@ int main() {
                 loopStart - startTime).count() / 1000000.0;
             
             // Populate sensor data structure
-            SensorData data;
+            IMUData data;
             data.timestamp = timestamp;
             data.accel << imuData.accel.x(), imuData.accel.y(), imuData.accel.z();
             data.gyro << imuData.gyro.x(), imuData.gyro.y(), imuData.gyro.z();
