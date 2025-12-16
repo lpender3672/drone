@@ -592,6 +592,141 @@ When stationary (detected via gyro/accel magnitude):
 
 Uses $\mat{H}_{\text{vel}}$.
 
+\subsection{Magnetometer Heading}
+
+The magnetometer provides heading observability by measuring Earth's magnetic field. A heading-only formulation avoids interference with accelerometer-derived tilt estimates.
+
+\subsubsection{Magnetic Field Model}
+
+The magnetometer measures the local magnetic field in the body frame:
+\begin{equation}
+    \tilde{\mat{m}}^b = \mat{C}_n^b \mat{m}^n + \mat{b}_m + \vect{\nu}_m
+\end{equation}
+
+where $\mat{m}^n$ is the reference field from a geomagnetic model (WMM/IGRF), $\mat{b}_m$ is hard-iron bias, and $\vect{\nu}_m$ is measurement noise.
+
+The reference field in NED:
+\begin{equation}
+    \mat{m}^n = \begin{bmatrix} m_N \\ m_E \\ m_D \end{bmatrix} = \|\mat{m}\| \begin{bmatrix} \cos\delta\cos\iota \\ \sin\delta\cos\iota \\ \sin\iota \end{bmatrix}
+\end{equation}
+
+where $\delta$ is magnetic declination and $\iota$ is magnetic inclination (both from the geomagnetic model at current position).
+
+\subsubsection{Heading Extraction}
+
+Transform the calibrated magnetometer reading to the navigation frame:
+\begin{equation}
+    \hat{\mat{m}}^n = \mat{C}_b^n (\tilde{\mat{m}}^b - \hat{\mat{b}}_m)
+\end{equation}
+
+Extract magnetic heading:
+\begin{equation}
+    \psi_{\text{mag}} = \text{atan2}(\hat{m}_E^n, \hat{m}_N^n)
+\end{equation}
+
+The true heading is obtained by applying declination:
+\begin{equation}
+    \psi_{\text{true}} = \psi_{\text{mag}} + \delta
+\end{equation}
+
+\subsubsection{Innovation}
+
+Compare magnetometer-derived heading to INS heading:
+\begin{equation}
+    z_{\psi} = \psi_{\text{mag}} - \hat{\psi}_{\text{INS}}
+\end{equation}
+
+The INS heading is extracted from the quaternion via the DCM:
+\begin{equation}
+    \hat{\psi}_{\text{INS}} = \text{atan2}(C_{12}, C_{11})
+\end{equation}
+
+where $C_{ij}$ are elements of $\mat{C}_b^n$.
+
+\textbf{Angle wrapping}: The innovation must be wrapped to $[-\pi, \pi]$:
+\begin{equation}
+    z_{\psi} \leftarrow \text{atan2}(\sin z_{\psi}, \cos z_{\psi})
+\end{equation}
+
+\subsubsection{Observation Matrix}
+
+The heading depends on the attitude error. For the linearization:
+\begin{equation}
+    \delta\psi = \frac{\partial \psi}{\partial \vect{\theta}} \vect{\theta}
+\end{equation}
+
+For level flight (small roll $\phi$ and pitch $\theta$), the heading error is dominated by yaw error:
+\begin{equation}
+    \mat{H}_{\psi}^{\text{approx}} = \begin{bmatrix}
+        \mat{0}_{1\times6} & 0 & 0 & 1 & \mat{0}_{1\times6}
+    \end{bmatrix}
+\end{equation}
+
+For the general case with arbitrary attitude, the full Jacobian is required. Let $\mat{C} = \mat{C}_b^n$:
+\begin{equation}
+    \frac{\partial \psi}{\partial \vect{\theta}} = \frac{1}{C_{11}^2 + C_{12}^2} \begin{bmatrix}
+        C_{11}\dfrac{\partial C_{12}}{\partial \theta_N} - C_{12}\dfrac{\partial C_{11}}{\partial \theta_N} \\[1em]
+        C_{11}\dfrac{\partial C_{12}}{\partial \theta_E} - C_{12}\dfrac{\partial C_{11}}{\partial \theta_E} \\[1em]
+        C_{11}\dfrac{\partial C_{12}}{\partial \theta_D} - C_{12}\dfrac{\partial C_{11}}{\partial \theta_D}
+    \end{bmatrix}^T
+\end{equation}
+
+The DCM perturbation due to attitude error:
+\begin{equation}
+    \delta\mat{C}_b^n = -\skewmat{\vect{\theta}}\mat{C}_b^n
+\end{equation}
+
+yields:
+\begin{align}
+    \delta C_{11} &= \theta_D C_{21} - \theta_E C_{31} \\
+    \delta C_{12} &= \theta_D C_{22} - \theta_E C_{32}
+\end{align}
+
+Therefore:
+\begin{equation}
+    \frac{\partial \psi}{\partial \vect{\theta}} = \frac{1}{C_{11}^2 + C_{12}^2} \begin{bmatrix}
+        0 \\
+        -(C_{11}C_{32} - C_{12}C_{31}) \\
+        C_{11}C_{22} - C_{12}C_{21}
+    \end{bmatrix}^T
+\end{equation}
+
+The full observation matrix ($1 \times 15$):
+\begin{equation}
+    \mat{H}_{\psi} = \begin{bmatrix}
+        \mat{0}_{1\times6} & \dfrac{\partial \psi}{\partial \vect{\theta}} & \mat{0}_{1\times6}
+    \end{bmatrix}
+    \label{eq:H_mag}
+\end{equation}
+
+\subsubsection{Measurement Noise}
+
+Typical magnetometer noise variance:
+\begin{equation}
+    R_{\psi} = \sigma_{\psi}^2
+\end{equation}
+
+where $\sigma_{\psi}$ depends on sensor quality and magnetic environment (typically $\SI{1}{\degree}$ to $\SI{5}{\degree}$).
+
+\subsubsection{Magnetic Disturbance Detection}
+
+Reject magnetometer updates when the field magnitude deviates significantly from the expected value:
+\begin{equation}
+    \text{if } \left| \|\tilde{\mat{m}}^b\| - \|\mat{m}^n\| \right| > \epsilon_m \quad \Rightarrow \quad \text{skip update}
+\end{equation}
+
+Typical threshold: $\epsilon_m \approx 0.1 \|\mat{m}^n\|$ (10\% deviation).
+
+\subsubsection{Update Rate}
+
+Magnetometer updates are typically applied at a lower rate than IMU propagation:
+\begin{itemize}
+    \item IMU: 100--400 Hz
+    \item Magnetometer: 1--20 Hz
+\end{itemize}
+
+This reduces computational load and limits the influence of high-frequency magnetic noise.
+
 %==============================================================================
 \section{EKF Algorithm}
 %==============================================================================
