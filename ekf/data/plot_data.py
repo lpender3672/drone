@@ -153,9 +153,64 @@ def plot_sensor_data(csv_path='sensor_data.csv', save_path='sensor_plots.png'):
     plt.close(fig)
     return fig
 
+def plot_ekf_data(csv_path='ekf_data.csv', save_path='ekf_plots.png'):
+    """
+    Plot EKF data from CSV file including attitude, velocity, and position.
+    
+    Args:
+        csv_path: Path to the EKF data CSV file
+        save_path: Path to save the figure (default: 'ekf_plots.png')
+    """
+    # Read the CSV file
+    df = pd.read_csv(csv_path)
+    
+    # Create figure with subplots
+    fig, axes = plt.subplots(3, 1, figsize=(12, 15))
+    fig.suptitle('EKF Data Analysis', fontsize=16)
 
-def plot_all_data(gps_csv='gps_data.csv', sensor_csv='sensor_data.csv', 
-                  gps_save='gps_plots.png', sensor_save='sensor_plots.png'):
+    # Plot 1: Velocity (North, East, Down)
+    axes[1].plot(df['time'], df['vn'], label='North', linewidth=0.8)
+    axes[1].plot(df['time'], df['ve'], label='East', linewidth=0.8)
+    axes[1].plot(df['time'], df['vd'], label='Down', linewidth=0.8)
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('Velocity (m/s)')
+    axes[1].set_title('INS Velocity')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    # Plot 2: Position (Latitude, Longitude)
+    scatter = axes[2].scatter(df['lon'], df['lat'], c=df['time'], cmap='viridis', 
+                              s=10, linewidth=0)
+    axes[2].scatter(df['lon'].iloc[0], df['lat'].iloc[0], 
+                    c='green', s=100, marker='o', label='Start', edgecolors='black')
+    axes[2].scatter(df['lon'].iloc[-1], df['lat'].iloc[-1], 
+                    c='red', s=100, marker='x', label='End', linewidths=3)
+    cbar = plt.colorbar(scatter, ax=axes[2])
+    cbar.set_label('Time (s)')
+    axes[2].set_xlabel('Longitude (degrees)')
+    axes[2].set_ylabel('Latitude (degrees)')
+    axes[2].set_title('INS Position Trajectory')
+    axes[2].legend()
+    axes[2].grid(True)
+
+    # Plot 3: Altitude
+    axes[0].plot(df['time'], df['alt'], label='Altitude', linewidth=0.8)
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('Altitude (m)')
+    axes[0].set_title('INS Altitude')
+    axes[0].legend()
+    axes[0].grid(True)
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"INS plots saved to {save_path}")
+    plt.close(fig)
+    return fig
+
+def plot_all_data(gps_csv='gps_data.csv', sensor_csv='sensor_data.csv',
+                  ekf_csv='ekf_data.csv',
+                  gps_save='gps_plots.png', sensor_save='sensor_plots.png',
+                  ekf_save='ekf_plots.png'):
     """
     Plot both GPS and sensor data and save to files.
     
@@ -165,11 +220,12 @@ def plot_all_data(gps_csv='gps_data.csv', sensor_csv='sensor_data.csv',
         gps_save: Path to save GPS plots
         sensor_save: Path to save sensor plots
     """
-    plot_gps_data(gps_csv, gps_save)
-    plot_sensor_data(sensor_csv, sensor_save)
+    
+    #plot_gps_data(gps_csv, gps_save)
+    #plot_sensor_data(sensor_csv, sensor_save)
+    plot_ekf_data(ekf_csv, ekf_save)
     print("All plots saved successfully!")
 
 
 if __name__ == '__main__':
-    # Example usage
     plot_all_data()

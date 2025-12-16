@@ -6,41 +6,38 @@
 #include <csignal>
 #include <cmath>
 
-// [Source: 352] Include the derived EKF header
 #include "eskf.h" 
 #include "RTIMULib.h"
+#include "gps_interface.h"
+#include "sensor_io.h"
 
 volatile bool running = true;
 void signalHandler(int signum) { running = false; }
 
-// [Source: 259] Constants for Pressure->Altitude conversion
-const double T0_KELVIN = 288.15;
-const double L_RATE = 0.0065;   // K/m
 const double P0_HPA = 1013.25;
-const double R_GAS = 287.053;   // J/(kg*K) [Approx for air, derived from Eq 59 context]
 const double G_ACCEL = 9.80665;
+const double DEG_TO_RAD = M_PI / 180.0;
 
-// Helper: Convert Pressure (hPa) to Altitude (m) using Eq (59)
 double calculateAltitude(double pressure_hPa) {
-    // h = (T0 / L) * (1 - (p / p0)^( (L*R) / g ) ) ... Wait, PDF Eq 59 exponent is LR/gM? 
-    // Actually standard barometric formula exponent is (R_specific * L) / g.
-    // Let's use the exact exponent form implied by standard atmosphere if PDF Eq 59 is generic: 
-    // Exponent = 1/5.255 approx.
-    double exponent = (R_GAS * L_RATE) / G_ACCEL; 
-    // Note: PDF Eq 59 has "LR/gM" which implies M is molar mass. 
-    // Standard approx: (1 - (p/p0)^0.1903) * 44330.
     return 44330.0 * (1.0 - pow(pressure_hPa / P0_HPA, 0.1903));
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
 
-    // --- 1. Load Settings ---
+    // GPS configuration (can be overridden via args)
+    std::string gps_device = "/dev/ttyACM0";
+    int gps_baudrate = 115200;
+    int gps_rate_hz = 5;
+    
+    if (argc > 1) gps_device = argv[1];
+    if (argc > 2) gps_baudrate = std::stoi(argv[2]);
+    if (argc > 3) gps_rate_hz = std::stoi(argv[3]);
+
+    // --- 1. Initialize Sensors ---
     RTIMUSettings *settings = new RTIMUSettings("RTIMULib");    
-    // Disable Internal Fusion to run raw ES-EKF
     settings->m_fusionType = RTFUSION_TYPE_NULL;
     
-    // --- 2. Create Sensors ---
     RTIMU *imu = RTIMU::createIMU(settings);
     RTPressure *pressure = RTPressure::createPressure(settings);
 
@@ -58,125 +55,202 @@ int main() {
     imu->setAccelEnable(true);
     imu->setCompassEnable(true);
 
-    // --- 3. Initial Static Alignment (Optional but recommended) ---
-    // The PDF suggests initializing quaternion from gravity/mag[cite: 277].
+    // --- 2. Initialize GPS ---
+    GPSInterface gps(gps_device, gps_baudrate);
+    
+    if (!gps.open()) {
+        std::cerr << "Failed to open GPS device: " << gps_device << std::endl;
+        std::cerr << "Continuing without GPS..." << std::endl;
+    } else {
+        std::cout << "GPS device opened: " << gps_device << std::endl;
+        gps.setUpdateRate(gps_rate_hz);
+        gps.configureUBX(0x01, 0x07, 1); // NAV-PVT
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    // --- 3. Initial Alignment ---
     std::cout << "Collecting samples for initial alignment (2 seconds)..." << std::endl;
     Eigen::Vector3d sum_acc(0,0,0);
-    Eigen::Vector3d sum_mag(0,0,0);
     int sample_count = 0;
 
     auto warmupStart = std::chrono::steady_clock::now();
-    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - warmupStart).count() < 2) {
+    while (std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - warmupStart).count() < 2) {
         if (imu->IMURead()) {
             RTIMU_DATA data = imu->getIMUData();
             sum_acc += Eigen::Vector3d(data.accel.x(), data.accel.y(), data.accel.z());
-            sum_mag += Eigen::Vector3d(data.compass.x(), data.compass.y(), data.compass.z());
             sample_count++;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    // Compute averages
     Eigen::Vector3d avg_acc = sum_acc / sample_count;
-    Eigen::Vector3d avg_mag = sum_mag / sample_count;
-
-    // Calculate Pitch/Roll from Gravity
-    // Assuming stationary: acc = [0, 0, -g] in Navigation frame (NED)
-    // Actually, RTIMULib acc is in body frame. 
-    // pitch = atan2(acc.x, sqrt(acc.y^2 + acc.z^2))
-    // roll  = atan2(-acc.y, -acc.z)
     double init_roll  = atan2(-avg_acc.y(), -avg_acc.z());
     double init_pitch = atan2(avg_acc.x(), sqrt(avg_acc.y()*avg_acc.y() + avg_acc.z()*avg_acc.z()));
-    
-    // Calculate Yaw from Mag (Simplified, normally requires tilt compensation)
-    // For now, we initialize yaw to 0 or use basic atan2(mag.y, mag.x)
-    double init_yaw = 0.0; 
 
-    // Create Initial Quaternion (Body to Nav)
     Eigen::Quaterniond q_init;
-    q_init = Eigen::AngleAxisd(init_yaw, Eigen::Vector3d::UnitZ()) *
+    q_init = Eigen::AngleAxisd(0.0, Eigen::Vector3d::UnitZ()) *
              Eigen::AngleAxisd(init_pitch, Eigen::Vector3d::UnitY()) *
              Eigen::AngleAxisd(init_roll,  Eigen::Vector3d::UnitX());
     
-    std::cout << "Initialized with Roll: " << init_roll * 180.0/M_PI 
+    std::cout << "Initial Roll: " << init_roll * 180.0/M_PI 
               << " Pitch: " << init_pitch * 180.0/M_PI << std::endl;
 
-    // --- 4. Initialize ES-EKF ---
+    // --- 4. Wait for GPS fix to initialize position ---
+    Eigen::Vector3d p0(45.0 * DEG_TO_RAD, 0.0, 100.0); // Default
+    Eigen::Vector3d v0(0,0,0);
+    bool gps_initialized = false;
+
+    std::cout << "Waiting for GPS fix..." << std::endl;
+    auto gps_wait_start = std::chrono::steady_clock::now();
+    
+    while (!gps_initialized && 
+           std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::steady_clock::now() - gps_wait_start).count() < 30) {
+        GPSData gps_data;
+        if (gps.readData(gps_data, 1000) && gps_data.valid_position) {
+            p0 = Eigen::Vector3d(
+                gps_data.latitude * DEG_TO_RAD,
+                gps_data.longitude * DEG_TO_RAD,
+                gps_data.altitude_msl
+            );
+            v0 = Eigen::Vector3d(gps_data.velocity_north, gps_data.velocity_east, gps_data.velocity_down);
+            gps_initialized = true;
+            std::cout << "GPS fix acquired. Initial position: " 
+                      << gps_data.latitude << ", " << gps_data.longitude 
+                      << ", " << gps_data.altitude_msl << "m" << std::endl;
+        }
+    }
+    
+    if (!gps_initialized) {
+        std::cout << "No GPS fix after 30s, using default position" << std::endl;
+    }
+
+    // --- 5. Initialize ESKF ---
     EsEkf ekf;
+    Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
 
-    // Initial State
-    Eigen::Vector3d p0(45.0 * M_PI / 180.0, 0.0, 100.0); // Lat (rad), Lon (rad), Alt (m)
-    Eigen::Vector3d v0(0,0,0); // NED Velocity
-    Eigen::Vector3d ba0(0,0,0);
-    Eigen::Vector3d bg0(0,0,0);
-
-    // Initial Covariance [Source: 279]
     Eigen::Matrix<double, 15, 15> P0;
     P0.setIdentity();
-    P0.block<3,3>(0,0) *= 1e-6; // Position (rad/m)
-    P0.block<3,3>(3,3) *= 0.1;  // Velocity
-    P0.block<3,3>(6,6) *= 0.01; // Attitude
-    P0.block<3,3>(9,9) *= 0.01; // Accel Bias
-    P0.block<3,3>(12,12) *= 0.001; // Gyro Bias
+    P0.block<3,3>(0,0) *= gps_initialized ? 1e-10 : 1e-6; // Tighter if GPS fix
+    P0.block<3,3>(3,3) *= 0.1;
+    P0.block<3,3>(6,6) *= 0.01;
+    P0.block<3,3>(9,9) *= 0.01;
+    P0.block<3,3>(12,12) *= 0.001;
 
     ekf.initialize(p0, v0, q_init, ba0, bg0, P0);
 
-    // --- 5. Main Loop ---
-    std::ofstream logFile("ins_data.csv");
-    logFile << "time,lat,lon,alt,vn,ve,vd,qw,qx,qy,qz" << std::endl;
+    // --- 6. Main Loop ---
+    std::ofstream logFile("ekf_data.csv");
+    logFile << "time,lat,lon,alt,vn,ve,vd,qw,qx,qy,qz,gps_valid" << std::endl;
 
     auto lastTime = std::chrono::steady_clock::now();
+    auto startTime = lastTime;
+    int imu_count = 0, gps_count = 0;
+    
     std::cout << "ESKF Running. Press Ctrl+C to stop." << std::endl;
 
     while (running) {
+        auto now = std::chrono::steady_clock::now();
+        
+        // --- IMU Predict (high rate) ---
         if (imu->IMURead()) {
             RTIMU_DATA imuData = imu->getIMUData();
             
-            auto now = std::chrono::steady_clock::now();
-            double dt = std::chrono::duration_cast<std::chrono::microseconds>(now - lastTime).count() / 1e6;
+            double dt = std::chrono::duration_cast<std::chrono::microseconds>(
+                now - lastTime).count() / 1e6;
             lastTime = now;
-            if (dt > 0.1) dt = 0.1; // Clamp large dts
+            if (dt > 0.1) dt = 0.1;
 
-            // --- PREDICT ---
             ImuMeasurement msg;
-            msg.t = 0.0; // t not used in predict calc, only dt
-            
-            // [Source: 337] Convert 'g' to 'm/s^2'
+            msg.t = 0.0;
             msg.acc = Eigen::Vector3d(imuData.accel.x(), imuData.accel.y(), imuData.accel.z()) * G_ACCEL;
-            
-            // [Source: 338] Gyro is already rad/s in RTIMULib
             msg.gyro = Eigen::Vector3d(imuData.gyro.x(), imuData.gyro.y(), imuData.gyro.z());
 
             ekf.predict(msg, dt);
+            imu_count++;
 
-            // --- UPDATE: Barometer ---
-            // [Source: 262] Innovation z = h_baro - h_ins
+            // Barometer update
             if (pressure->pressureRead(imuData) && imuData.pressureValid) {
-                // Convert hPa to Altitude [Source: 259]
                 double baro_alt = calculateAltitude(imuData.pressure);
-                
-                // Uncertainty R (variance)
-                double R_baro = 2.0 * 2.0; // 2 meters std dev
-                ekf.update_barometer(baro_alt, R_baro);
+                ekf.update_barometer(baro_alt, 4.0); // R = 2m std dev squared
             }
-            
-            // Note: Magnetometer update is NOT included because the provided derivation (PDF)
-            // does not define a measurement model for it in Section 8.
-            
-            // --- LOGGING ---
-            NominalState state = ekf.getState();
-            
-            logFile << std::fixed << std::setprecision(9)
-                    << std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() / 1000.0 << ","
-                    << state.p.x() << "," << state.p.y() << "," << state.p.z() << ","
-                    << state.v.x() << "," << state.v.y() << "," << state.v.z() << ","
-                    << state.q.w() << "," << state.q.x() << "," << state.q.y() << "," << state.q.z()
-                    << std::endl;
         }
+
+        // --- GPS Update (lower rate, non-blocking) ---
+        GPSData gps_data;
+        if (gps.readData(gps_data, 0)) { // 0 timeout = non-blocking
+            gps_data.timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                now - startTime).count() / 1e6;
+            
+            if (gps_data.valid_position && gps_data.fix_type >= 2) {
+                gps_count++;
+                
+                // Position update: convert GPS accuracy to covariance
+                // horizontal_accuracy is CEP (circular error probable), ~1 sigma
+                double h_var = gps_data.horizontal_accuracy * gps_data.horizontal_accuracy;
+                double v_var = gps_data.vertical_accuracy * gps_data.vertical_accuracy;
+                
+                // Convert lat/lon accuracy from meters to radians
+                NominalState state = ekf.getState();
+                double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state.p.x()) * sin(state.p.x()));
+                double lat_var = h_var / (R_N * R_N);
+                double lon_var = h_var / (R_N * cos(state.p.x()) * R_N * cos(state.p.x()));
+
+                Eigen::Vector3d pos_gnss(
+                    gps_data.latitude * DEG_TO_RAD,
+                    gps_data.longitude * DEG_TO_RAD,
+                    gps_data.altitude_msl
+                );
+                
+                Eigen::Matrix3d R_pos = Eigen::Matrix3d::Zero();
+                R_pos(0,0) = lat_var;
+                R_pos(1,1) = lon_var;
+                R_pos(2,2) = v_var;
+                
+                ekf.update_gnss_position(pos_gnss, R_pos);
+
+                // Velocity update
+                if (gps_data.valid_velocity) {
+                    double speed_var = gps_data.speed_accuracy * gps_data.speed_accuracy;
+                    
+                    Eigen::Vector3d vel_gnss(gps_data.velocity_north, gps_data.velocity_east, gps_data.velocity_down);
+                    Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * speed_var;
+                    
+                    ekf.update_gnss_velocity(vel_gnss, R_vel);
+                }
+
+                // Status output
+                if (gps_count % 5 == 0) {
+                    std::cout << "\r[IMU:" << imu_count << " GPS:" << gps_count << "] "
+                              << "Fix:" << (int)gps_data.fix_type << "D "
+                              << "Sats:" << (int)gps_data.num_satellites << " "
+                              << "HAcc:" << std::fixed << std::setprecision(1) 
+                              << gps_data.horizontal_accuracy << "m    " << std::flush;
+                }
+            }
+        }
+
+        // --- Logging ---
+        NominalState state = ekf.getState();
+        double t = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - startTime).count() / 1000.0;
+            
+        logFile << std::fixed << std::setprecision(9)
+                << t << ","
+                << state.p.x() << "," << state.p.y() << "," << state.p.z() << ","
+                << state.v.x() << "," << state.v.y() << "," << state.v.z() << ","
+                << state.q.w() << "," << state.q.x() << "," << state.q.y() << "," << state.q.z() << ","
+                << (gps_data.valid_position ? 1 : 0)
+                << std::endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
+    std::cout << "\n\nStopped. IMU samples: " << imu_count << ", GPS fixes: " << gps_count << std::endl;
+    
     logFile.close();
+    gps.close();
     delete imu; delete pressure; delete settings;
     return 0;
 }

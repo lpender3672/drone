@@ -32,7 +32,7 @@ if(RPI_BUILD)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1")
 
-    add_executable(ins_runner rpi/main.cpp shared/eskf.cpp)
+    add_executable(ins_runner rpi/main.cpp rpi/gps_interface.cpp shared/eskf.cpp)
     target_link_libraries(ins_runner RTIMULib Eigen3::Eigen)
 
     # Sense Hat Logger executable
