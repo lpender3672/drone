@@ -5,19 +5,30 @@ EsEkf::EsEkf() {
     P_.setIdentity();
     Qc_.setZero();
 
-    // [Source: 165, 190] Example Noise Params (These should be tuned based on sensor specs)
-    // Values below are placeholders. 
-    double sigma_acc_n = 200.0 * 1e-6 * g0; // White noise accel
-    double sigma_gyro_n = 0.1 * (M_PI / 180.0); // White noise gyro
-    double sigma_acc_w = 1000.0 * 1e-6 * g0; // Random walk accel
-    double sigma_gyro_w = 1.0 * (M_PI / 180.0); // Random walk gyro
+    double N_gyro  = 1.83146e-04;   // rad/s/sqrt(Hz)  
+    double B_gyro  = 1.43198e-04;   // rad/s
+    double Tp_gyro = 13.260;     // s
 
-    // Diagonal Qc [Source: 190]
+    // Accel (using Z-axis worst case, in m/s2)
+    double N_acc  = 9.59874e-05;    // m/s2/sqrt(Hz)  
+    double B_acc  = 5.45486e-05;    // m/s2
+    double Tp_acc = 7.022;      // s
+    
+    // Gauss-Markov conversion
+    double sigma_ba = B_acc * B_acc / (tau_acc * 0.4365 * 0.4365);
+    double sigma_bg = B_gyro * B_gyro / (tau_gyro * 0.4365 * 0.4365);
+    double tau_a_ = Tp_acc / 1.89;
+    double tau_g_ = Tp_gyro / 1.89;
+
+    // Driving noise PSD: q = 2σ²/τ
+    double q_ba = 2.0 * pow(sigma_ba, 2) / tau_a_;
+    double q_bg = 2.0 * pow(sigma_bg, 2) / tau_g_;
+
     Qc_.diagonal() << 
-        pow(sigma_acc_n, 2) * Eigen::Vector3d::Ones(),
-        pow(sigma_gyro_n, 2) * Eigen::Vector3d::Ones(),
-        pow(sigma_acc_w, 2) * Eigen::Vector3d::Ones(),
-        pow(sigma_gyro_w, 2) * Eigen::Vector3d::Ones();
+        pow(N_gyro, 2) * Eigen::Vector3d::Ones(),
+        pow(N_acc, 2) * Eigen::Vector3d::Ones(),
+        q_ba * Eigen::Vector3d::Ones(),
+        q_bg * Eigen::Vector3d::Ones();
 }
 
 void EsEkf::initialize(const Eigen::Vector3d& init_pos, 
@@ -163,6 +174,13 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     // F_theta_bg (Att-GyroBias) [Source: 136]
     F.block<3,3>(IDX_ATT, IDX_BG) = -C_b_n;
 
+    // Gauss-Markov Bias Dynamics
+    // F_ba_ba (AccelBias-AccelBias) - Gauss-Markov correlation
+    F.block<3,3>(IDX_BA, IDX_BA) = -Eigen::Matrix3d::Identity() / tau_a_;
+
+    // F_bg_bg (GyroBias-GyroBias) - Gauss-Markov correlation  
+    F.block<3,3>(IDX_BG, IDX_BG) = -Eigen::Matrix3d::Identity() / tau_g_;
+
     // --- Build G Matrix [Source: 185] ---
     Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>::Zero();
     G.block<3,3>(IDX_VEL, 0) = -C_b_n;      // v - eta_a
@@ -183,7 +201,10 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
 
     // Matrix Exponential [Source: 211-212]
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    // for small dt, use Taylor expansion up to 2nd order
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I30 = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I30 + A + 0.5 * A * A; // + O(dt^3)
 
     // Extract Phi and Qd [Source: 214]
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
