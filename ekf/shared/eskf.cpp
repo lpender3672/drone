@@ -219,10 +219,10 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
 
     // Matrix Exponential [Source: 211-212]
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
     // for small dt, use Taylor expansion up to 2nd order !!! DOESNT WORK
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I30 = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I30 + A + 0.5 * A * A; // + O(dt^3)
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> Ivanloan = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = Ivanloan + A + 0.5 * A * A; // + O(dt^3)
 
     // Extract Phi and Qd [Source: 214]
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
