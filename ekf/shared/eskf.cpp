@@ -1,34 +1,52 @@
 #include "eskf.h"
+#include "tuned_imu_params.h"
+
+using namespace IMUErrorModel;
 
 EsEkf::EsEkf() {
     // Initialize Covariance and Q_c
     P_.setIdentity();
     Qc_.setZero();
 
-    double N_gyro  = 1.83146e-04;   // rad/s/sqrt(Hz)  
-    double B_gyro  = 1.43198e-04;   // rad/s
-    double Tp_gyro = 13.260;     // s
-
-    // Accel (using Z-axis worst case, in m/s2)
-    double N_acc  = 9.59874e-05;    // m/s2/sqrt(Hz)  
-    double B_acc  = 5.45486e-05;    // m/s2
-    double Tp_acc = 7.022;      // s
+    // Load gyro parameters from header (rad/s units)
+    Eigen::Vector3d N_gyro(GYRO_X_N, 
+                           GYRO_Y_N, 
+                           GYRO_Z_N);
     
-    // Gauss-Markov conversion
-    double sigma_ba = B_acc * B_acc / (tau_acc * 0.4365 * 0.4365);
-    double sigma_bg = B_gyro * B_gyro / (tau_gyro * 0.4365 * 0.4365);
-    double tau_a_ = Tp_acc / 1.89;
-    double tau_g_ = Tp_gyro / 1.89;
+    Eigen::Vector3d B_gyro(GYRO_X_B,
+                           GYRO_Y_B,
+                           GYRO_Z_B);
+    
+    Eigen::Vector3d Tp_gyro(GYRO_X_TP,
+                          GYRO_Y_TP,
+                          GYRO_Z_TP);
 
-    // Driving noise PSD: q = 2σ²/τ
-    double q_ba = 2.0 * pow(sigma_ba, 2) / tau_a_;
-    double q_bg = 2.0 * pow(sigma_bg, 2) / tau_g_;
+    // Load accel parameters from header (m/s² units)
+    Eigen::Vector3d N_acc(ACCEL_X_N, 
+                          ACCEL_Y_N, 
+                          ACCEL_Z_N);
+    
+    Eigen::Vector3d B_acc(ACCEL_X_B,
+                          ACCEL_Y_B,
+                          ACCEL_Z_B);
+    
+    Eigen::Vector3d Tp_acc(ACCEL_X_TP,
+                          ACCEL_Y_TP,
+                          ACCEL_Z_TP);
+    
+    tau_g_ = Tp_gyro / 1.89;
+    tau_a_ = Tp_acc / 1.89;
 
+    Eigen::Vector3d sigma_ba = B_acc.array().square() / (tau_a_.array() * 0.4365 * 0.4365);
+    Eigen::Vector3d sigma_bg = B_gyro.array().square() / (tau_g_.array() * 0.4365 * 0.4365);
+
+    Eigen::Vector3d q_ba = 2.0 * sigma_ba.array().square() / tau_a_.array();
+    Eigen::Vector3d q_bg = 2.0 * sigma_bg.array().square() / tau_g_.array();
     Qc_.diagonal() << 
-        pow(N_gyro, 2) * Eigen::Vector3d::Ones(),
-        pow(N_acc, 2) * Eigen::Vector3d::Ones(),
-        q_ba * Eigen::Vector3d::Ones(),
-        q_bg * Eigen::Vector3d::Ones();
+        N_gyro.array().square(),
+        N_acc.array().square(),
+        q_ba,
+        q_bg;
 }
 
 void EsEkf::initialize(const Eigen::Vector3d& init_pos, 
@@ -176,10 +194,10 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
 
     // Gauss-Markov Bias Dynamics
     // F_ba_ba (AccelBias-AccelBias) - Gauss-Markov correlation
-    F.block<3,3>(IDX_BA, IDX_BA) = -Eigen::Matrix3d::Identity() / tau_a_;
+    F.block<3,3>(IDX_BA, IDX_BA).diagonal() = -1.0 / tau_a_.array();
 
     // F_bg_bg (GyroBias-GyroBias) - Gauss-Markov correlation  
-    F.block<3,3>(IDX_BG, IDX_BG) = -Eigen::Matrix3d::Identity() / tau_g_;
+    F.block<3,3>(IDX_BG, IDX_BG).diagonal() = -1.0 / tau_g_.array();
 
     // --- Build G Matrix [Source: 185] ---
     Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>::Zero();
@@ -201,10 +219,10 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
 
     // Matrix Exponential [Source: 211-212]
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
-    // for small dt, use Taylor expansion up to 2nd order
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I30 = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I30 + A + 0.5 * A * A; // + O(dt^3)
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    // for small dt, use Taylor expansion up to 2nd order !!! DOESNT WORK
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I30 = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I30 + A + 0.5 * A * A; // + O(dt^3)
 
     // Extract Phi and Qd [Source: 214]
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();

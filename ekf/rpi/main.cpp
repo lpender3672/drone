@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
     ekf.initialize(p0, v0, q_init, ba0, bg0, P0);
 
     // --- 6. Main Loop ---
-    std::ofstream logFile("ekf_data.csv");
+    std::ofstream logFile("data/ekf_data.csv");
     logFile << "time,lat,lon,alt,vn,ve,vd,qw,qx,qy,qz,gps_valid" << std::endl;
 
     auto lastTime = std::chrono::steady_clock::now();

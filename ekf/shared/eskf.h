@@ -87,6 +87,9 @@ private:
     const double g0 = 9.80665;              // Gravity
     const double WE = 7.292115e-5;          // Earth rotation rate
 
+    Eigen::Vector3d tau_a_;           // Accel bias correlation time [s]
+    Eigen::Vector3d tau_g_;           // Gyro bias correlation time [s]
+
     // Helpers
     Eigen::Matrix3d skew(const Eigen::Vector3d& v);
     void compute_radius(double lat, double& RM, double& RN);

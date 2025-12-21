@@ -207,24 +207,73 @@ def plot_ekf_data(csv_path='ekf_data.csv', save_path='ekf_plots.png'):
     plt.close(fig)
     return fig
 
-def plot_all_data(gps_csv='gps_data.csv', sensor_csv='sensor_data.csv',
-                  ekf_csv='ekf_data.csv',
-                  gps_save='gps_plots.png', sensor_save='sensor_plots.png',
-                  ekf_save='ekf_plots.png'):
+def plot_attitude_data(csv_path='ekf_data.csv', save_path='attitude_plots.png'):
     """
-    Plot both GPS and sensor data and save to files.
+    Plot EKF attitude data from CSV file including roll, pitch, and yaw.
     
     Args:
-        gps_csv: Path to the GPS data CSV file
-        sensor_csv: Path to the sensor data CSV file
-        gps_save: Path to save GPS plots
-        sensor_save: Path to save sensor plots
+        csv_path: Path to the EKF data CSV file
+        save_path: Path to save the figure (default: 'attitude_plots.png')
     """
+    # Read the CSV file
+    df = pd.read_csv(csv_path)
     
-    #plot_gps_data(gps_csv, gps_save)
-    #plot_sensor_data(sensor_csv, sensor_save)
-    plot_ekf_data(ekf_csv, ekf_save)
-    print("All plots saved successfully!")
+    qw = df['qw'].to_numpy()
+    qx = df['qx'].to_numpy()
+    qy = df['qy'].to_numpy()
+    qz = df['qz'].to_numpy()
+
+    # Convert quaternions to Euler angles (roll, pitch, yaw)
+    roll = np.arctan2(2 * (qw * qx + qy
+    * qz), 1 - 2 * (qx**2 + qy**2)) * (180.0 / np.pi)
+    pitch = np.arcsin(2 * (qw * qy - qz * qx)) * (180.0 / np.pi)
+    yaw = np.arctan2(2 * (qw * qz + qx
+    * qy), 1 - 2 * (qy**2 + qz**2)) * (180.0 / np.pi)
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(3, 1, figsize=(12, 12))
+    fig.suptitle('EKF Attitude Data', fontsize=16)
+
+    # Plot Roll
+    axes[0].plot(df['time'], roll, label='Roll', color
+    ='b', linewidth=0.8)
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('Roll (degrees)')
+    axes[0].set_title('Roll Angle')
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Plot Pitch
+    axes[1].plot(df['time'], pitch, label='Pitch', color
+    ='g', linewidth=0.8)
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('Pitch (degrees)')
+    axes[1].set_title('Pitch Angle')
+    axes[1].legend()
+    axes[1].grid(True)
+
+    # Plot Yaw
+    axes[2].plot(df['time'], yaw, label='Yaw', color
+    ='r', linewidth=0.8)
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('Yaw (degrees)')
+    axes[2].set_title('Yaw Angle')
+    axes[2].legend()
+    axes[2].grid(True)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"Attitude plots saved to {save_path}")
+    plt.close(fig)
+    return fig
+
+def plot_all_data():
+    """
+    Generate and save all plots: GPS data, sensor data, EKF data, and attitude data.
+    """
+    #plot_gps_data(csv_path='data/gps_data.csv', save_path='data/gps_plots.png')
+    #plot_sensor_data(csv_path='data/sensor_data.csv', save_path='data/sensor_plots.png')
+    plot_ekf_data(csv_path='data/ekf_data.csv', save_path='data/ekf_plots.png')
+    plot_attitude_data(csv_path='data/ekf_data.csv', save_path='data/attitude_plots.png')
 
 
 if __name__ == '__main__':
