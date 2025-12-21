@@ -169,9 +169,9 @@ def plot_ekf_data(csv_path='ekf_data.csv', save_path='ekf_plots.png'):
     fig.suptitle('EKF Data Analysis', fontsize=16)
 
     # Plot 1: Velocity (North, East, Down)
-    axes[1].plot(df['time'], df['vn'], label='North', linewidth=0.8)
-    axes[1].plot(df['time'], df['ve'], label='East', linewidth=0.8)
-    axes[1].plot(df['time'], df['vd'], label='Down', linewidth=0.8)
+    axes[1].plot(df['timestamp'], df['vN'], label='North', linewidth=0.8)
+    axes[1].plot(df['timestamp'], df['vE'], label='East', linewidth=0.8)
+    axes[1].plot(df['timestamp'], df['vD'], label='Down', linewidth=0.8)
     axes[1].set_xlabel('Time (s)')
     axes[1].set_ylabel('Velocity (m/s)')
     axes[1].set_title('INS Velocity')
@@ -179,7 +179,7 @@ def plot_ekf_data(csv_path='ekf_data.csv', save_path='ekf_plots.png'):
     axes[1].grid(True)
     
     # Plot 2: Position (Latitude, Longitude)
-    scatter = axes[2].scatter(df['lon'], df['lat'], c=df['time'], cmap='viridis', 
+    scatter = axes[2].scatter(df['lon'], df['lat'], c=df['timestamp'], cmap='viridis', 
                               s=10, linewidth=0)
     axes[2].scatter(df['lon'].iloc[0], df['lat'].iloc[0], 
                     c='green', s=100, marker='o', label='Start', edgecolors='black')
@@ -194,7 +194,7 @@ def plot_ekf_data(csv_path='ekf_data.csv', save_path='ekf_plots.png'):
     axes[2].grid(True)
 
     # Plot 3: Altitude
-    axes[0].plot(df['time'], df['alt'], label='Altitude', linewidth=0.8)
+    axes[0].plot(df['timestamp'], df['alt'], label='Altitude', linewidth=0.8)
     axes[0].set_xlabel('Time (s)')
     axes[0].set_ylabel('Altitude (m)')
     axes[0].set_title('INS Altitude')
@@ -235,7 +235,7 @@ def plot_attitude_data(csv_path='ekf_data.csv', save_path='attitude_plots.png'):
     fig.suptitle('EKF Attitude Data', fontsize=16)
 
     # Plot Roll
-    axes[0].plot(df['time'], roll, label='Roll', color
+    axes[0].plot(df['timestamp'], roll, label='Roll', color
     ='b', linewidth=0.8)
     axes[0].set_xlabel('Time (s)')
     axes[0].set_ylabel('Roll (degrees)')
@@ -244,7 +244,7 @@ def plot_attitude_data(csv_path='ekf_data.csv', save_path='attitude_plots.png'):
     axes[0].grid(True)
 
     # Plot Pitch
-    axes[1].plot(df['time'], pitch, label='Pitch', color
+    axes[1].plot(df['timestamp'], pitch, label='Pitch', color
     ='g', linewidth=0.8)
     axes[1].set_xlabel('Time (s)')
     axes[1].set_ylabel('Pitch (degrees)')
@@ -253,7 +253,7 @@ def plot_attitude_data(csv_path='ekf_data.csv', save_path='attitude_plots.png'):
     axes[1].grid(True)
 
     # Plot Yaw
-    axes[2].plot(df['time'], yaw, label='Yaw', color
+    axes[2].plot(df['timestamp'], yaw, label='Yaw', color
     ='r', linewidth=0.8)
     axes[2].set_xlabel('Time (s)')
     axes[2].set_ylabel('Yaw (degrees)')

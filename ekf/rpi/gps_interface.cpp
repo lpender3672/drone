@@ -450,7 +450,6 @@ void GPSInterface::calculateUBXChecksum(const uint8_t* data, size_t length,
 }
 
 bool GPSInterface::verifyNMEAChecksum(const std::string& sentence) {
-    // Find checksum delimiter
     size_t star_pos = sentence.find('*');
     if (star_pos == std::string::npos || star_pos < 1) {
         return false;
@@ -462,14 +461,22 @@ bool GPSInterface::verifyNMEAChecksum(const std::string& sentence) {
         checksum ^= sentence[i];
     }
     
-    // Parse checksum from sentence
-    if (star_pos + 2 >= sentence.length()) {
+    // Validate checksum field exists and has exactly 2 hex digits
+    if (star_pos + 3 > sentence.length()) {
         return false;
     }
     
-    uint8_t expected_checksum = std::stoi(sentence.substr(star_pos + 1, 2), nullptr, 16);
+    std::string checksum_str = sentence.substr(star_pos + 1, 2);
+    if (!std::isxdigit(checksum_str[0]) || !std::isxdigit(checksum_str[1])) {
+        return false;
+    }
     
-    return checksum == expected_checksum;
+    try {
+        uint8_t expected_checksum = std::stoi(checksum_str, nullptr, 16);
+        return checksum == expected_checksum;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 bool GPSInterface::sendUBXCommand(uint8_t msg_class, uint8_t msg_id, 

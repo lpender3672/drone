@@ -233,46 +233,59 @@ private:
 // Class for writing INS output data to CSV
 class INSWriter {
 public:
-    INSWriter(const std::string& filename) {
+    INSWriter(const std::string& filename, size_t buffer_size = 100) 
+        : buffer_size_(buffer_size), count_(0) {
         file_.open(filename);
         if (!file_.is_open()) {
             throw std::runtime_error("Failed to open file: " + filename);
         }
+        buffer_.reserve(buffer_size);
+        
         // Write header
         file_ << "timestamp,lat,lon,alt,vN,vE,vD,qw,qx,qy,qz,"
               << "ba_x,ba_y,ba_z,bg_x,bg_y,bg_z" << std::endl;
-        count_ = 0;
     }
     
     ~INSWriter() {
+        flush();
         if (file_.is_open()) {
             file_.close();
         }
     }
     
     void write(const INSData& data) {
-        file_ << std::fixed << std::setprecision(9) 
-              << data.timestamp << ","
-              << data.position_lla.x() << "," << data.position_lla.y() << "," << data.position_lla.z() << ","
-              << data.velocity.x() << "," << data.velocity.y() << "," << data.velocity.z() << ","
-              << data.attitude.w() << "," << data.attitude.x() << "," 
-              << data.attitude.y() << "," << data.attitude.z() << ","
-              << data.accel_bias.x() << "," << data.accel_bias.y() << "," << data.accel_bias.z() << ","
-              << data.gyro_bias.x() << "," << data.gyro_bias.y() << "," << data.gyro_bias.z() 
-              << std::endl;
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(9) 
+            << data.timestamp << ","
+            << data.position_lla.x() << "," << data.position_lla.y() << "," << data.position_lla.z() << ","
+            << data.velocity.x() << "," << data.velocity.y() << "," << data.velocity.z() << ","
+            << data.attitude.w() << "," << data.attitude.x() << "," 
+            << data.attitude.y() << "," << data.attitude.z() << ","
+            << data.accel_bias.x() << "," << data.accel_bias.y() << "," << data.accel_bias.z() << ","
+            << data.gyro_bias.x() << "," << data.gyro_bias.y() << "," << data.gyro_bias.z();
         
-        // Flush periodically
-        if (++count_ % 100 == 0) {
-            file_.flush();
+        buffer_.push_back(oss.str());
+        count_++;
+        
+        if (buffer_.size() >= buffer_size_) {
+            flush();
         }
     }
     
     void flush() {
-        file_.flush();
+        if (!buffer_.empty()) {
+            for (const auto& line : buffer_) {
+                file_ << line << '\n';
+            }
+            file_.flush();
+            buffer_.clear();
+        }
     }
     
 private:
     std::ofstream file_;
+    std::vector<std::string> buffer_;
+    size_t buffer_size_;
     int count_;
 };
 
