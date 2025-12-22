@@ -129,6 +129,7 @@ int main(int argc, char* argv[]) {
     // --- 5. Initialize ESKF ---
     EsEkf ekf;
     Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
+    double bb0 = 0.0;
 
     Eigen::Matrix<double, 15, 15> P0;
     P0.setIdentity();
@@ -138,7 +139,7 @@ int main(int argc, char* argv[]) {
     P0.block<3,3>(9,9) *= 0.01;
     P0.block<3,3>(12,12) *= 0.001;
 
-    ekf.initialize(p0, v0, q_init, ba0, bg0, P0);
+    ekf.initialize(p0, v0, q_init, ba0, bg0, bb0, P0);
 
     // --- 6. Main Loop ---
     INSWriter insWriter("data/ekf_data.csv", 100);

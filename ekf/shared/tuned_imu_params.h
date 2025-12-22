@@ -6,33 +6,43 @@
 
 namespace IMUErrorModel {
 
-    // Sampling frequency (Hz)
-    constexpr double SAMPLING_FREQ = 52.051289;
+    constexpr double SAMPLING_FREQ = 52.051289;  // Hz
 
     // gyro_x parameters
-    constexpr double GYRO_X_N = 2.1072071062e-04;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double GYRO_X_B = 1.3405299582e-04;     // bias instability
-    constexpr double GYRO_X_TP = 13.256156;     // delay for GM ASD peak (s)
+    constexpr double GYRO_X_N = 2.1072071062e-04;   // rad/s/rtHz
+    constexpr double GYRO_X_B = 1.3405299582e-04;   // rad/s
+    constexpr double GYRO_X_TP = 13.256156;  // s
+
     // gyro_y parameters
-    constexpr double GYRO_Y_N = 1.8296497951e-04;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double GYRO_Y_B = 1.4333840014e-04;     // bias instability
-    constexpr double GYRO_Y_TP = 13.256156;     // delay for GM ASD peak (s)
+    constexpr double GYRO_Y_N = 1.8296497951e-04;   // rad/s/rtHz
+    constexpr double GYRO_Y_B = 1.4333840014e-04;   // rad/s
+    constexpr double GYRO_Y_TP = 13.256156;  // s
+
     // gyro_z parameters
-    constexpr double GYRO_Z_N = 1.8989422621e-04;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double GYRO_Z_B = 1.5659603614e-04;     // bias instability
-    constexpr double GYRO_Z_TP = 24.994578;     // delay for GM ASD peak (s)
+    constexpr double GYRO_Z_N = 1.8989422621e-04;   // rad/s/rtHz
+    constexpr double GYRO_Z_B = 1.5659603614e-04;   // rad/s
+    constexpr double GYRO_Z_TP = 24.994578;  // s
+
     // accel_x parameters
-    constexpr double ACCEL_X_N = 1.1429572532e-04;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double ACCEL_X_B = 4.4068777396e-05;     // bias instability
-    constexpr double ACCEL_X_TP = 13.256156;     // delay for GM ASD peak (s)
+    constexpr double ACCEL_X_N = 1.1208581747e-03;   // m/s^2/rtHz
+    constexpr double ACCEL_X_B = 4.3216707585e-04;   // m/s^2
+    constexpr double ACCEL_X_TP = 13.256156;  // s
+
     // accel_y parameters
-    constexpr double ACCEL_Y_N = 9.6181726771e-05;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double ACCEL_Y_B = 5.4238764749e-05;     // bias instability
-    constexpr double ACCEL_Y_TP = 7.031526;     // delay for GM ASD peak (s)
+    constexpr double ACCEL_Y_N = 9.4322053084e-04;   // m/s^2/rtHz
+    constexpr double ACCEL_Y_B = 5.3190058233e-04;   // m/s^2
+    constexpr double ACCEL_Y_TP = 7.031526;  // s
+
     // accel_z parameters
-    constexpr double ACCEL_Z_N = 8.8667142953e-04;     // ASD, m/s/s/rtHz or rad/s/rtHz
-    constexpr double ACCEL_Z_B = 1.8429013181e-04;     // bias instability
-    constexpr double ACCEL_Z_TP = 30.892606;     // delay for GM ASD peak (s)
+    constexpr double ACCEL_Z_N = 8.6952763744e-03;   // m/s^2/rtHz
+    constexpr double ACCEL_Z_B = 1.8072688211e-03;   // m/s^2
+    constexpr double ACCEL_Z_TP = 30.892606;  // s
+
+    // baro_altitude parameters
+    constexpr double BARO_ALTITUDE_N = 1.3389559051e-01;   // m/rtHz
+    constexpr double BARO_ALTITUDE_B = 1.4283838135e-02;   // m
+    constexpr double BARO_ALTITUDE_TP = 0.019212;  // s
+
 } // namespace IMUErrorModel
 
 #endif // IMU_ERROR_MODEL_H

@@ -4,49 +4,44 @@
 using namespace IMUErrorModel;
 
 EsEkf::EsEkf() {
-    // Initialize Covariance and Q_c
     P_.setIdentity();
     Qc_.setZero();
 
-    // Load gyro parameters from header (rad/s units)
-    Eigen::Vector3d N_gyro(GYRO_X_N, 
-                           GYRO_Y_N, 
-                           GYRO_Z_N);
-    
-    Eigen::Vector3d B_gyro(GYRO_X_B,
-                           GYRO_Y_B,
-                           GYRO_Z_B);
-    
-    Eigen::Vector3d Tp_gyro(GYRO_X_TP,
-                          GYRO_Y_TP,
-                          GYRO_Z_TP);
+    // Load gyro parameters (rad/s units)
+    Eigen::Vector3d N_gyro(GYRO_X_N, GYRO_Y_N, GYRO_Z_N);
+    Eigen::Vector3d B_gyro(GYRO_X_B, GYRO_Y_B, GYRO_Z_B);
+    Eigen::Vector3d Tp_gyro(GYRO_X_TP, GYRO_Y_TP, GYRO_Z_TP);
 
-    // Load accel parameters from header (m/s² units)
-    Eigen::Vector3d N_acc(ACCEL_X_N, 
-                          ACCEL_Y_N, 
-                          ACCEL_Z_N);
-    
-    Eigen::Vector3d B_acc(ACCEL_X_B,
-                          ACCEL_Y_B,
-                          ACCEL_Z_B);
-    
-    Eigen::Vector3d Tp_acc(ACCEL_X_TP,
-                          ACCEL_Y_TP,
-                          ACCEL_Z_TP);
-    
+    // Load accel parameters (m/s² units)
+    Eigen::Vector3d N_acc(ACCEL_X_N, ACCEL_Y_N, ACCEL_Z_N);
+    Eigen::Vector3d B_acc(ACCEL_X_B, ACCEL_Y_B, ACCEL_Z_B);
+    Eigen::Vector3d Tp_acc(ACCEL_X_TP, ACCEL_Y_TP, ACCEL_Z_TP);
+
+    // Load baro parameters (m units)
+    double N_baro = BARO_ALTITUDE_N;
+    double B_baro = BARO_ALTITUDE_B;
+    double Tp_baro = 1e6; // Large time constant to approximate white noise
+
+    // Gauss-Markov time constants
     tau_g_ = Tp_gyro / 1.89;
     tau_a_ = Tp_acc / 1.89;
+    tau_bbaro_ = Tp_baro / 1.89;
 
+    // Compute driving noise variances
     Eigen::Vector3d sigma_ba = B_acc.array().square() / (tau_a_.array() * 0.4365 * 0.4365);
     Eigen::Vector3d sigma_bg = B_gyro.array().square() / (tau_g_.array() * 0.4365 * 0.4365);
+    double sigma_bbaro = (B_baro * B_baro) / (tau_bbaro_ * 0.4365 * 0.4365);
 
     Eigen::Vector3d q_ba = 2.0 * sigma_ba.array().square() / tau_a_.array();
     Eigen::Vector3d q_bg = 2.0 * sigma_bg.array().square() / tau_g_.array();
+    double q_bbaro = 2.0 * sigma_bbaro * sigma_bbaro / tau_bbaro_;
+
     Qc_.diagonal() << 
-        N_gyro.array().square(),
-        N_acc.array().square(),
-        q_ba,
-        q_bg;
+        N_gyro.array().square(),   // 0-2: gyro noise
+        N_acc.array().square(),    // 3-5: accel noise
+        q_ba,                      // 6-8: accel bias driving noise
+        q_bg,                      // 9-11: gyro bias driving noise
+        q_bbaro;                   // 12: baro bias driving noise
 }
 
 void EsEkf::initialize(const Eigen::Vector3d& init_pos, 
@@ -54,17 +49,18 @@ void EsEkf::initialize(const Eigen::Vector3d& init_pos,
                        const Eigen::Quaterniond& init_quat,
                        const Eigen::Vector3d& init_ba,
                        const Eigen::Vector3d& init_bg,
+                       double init_bbaro,
                        const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P) {
     x_.p = init_pos;
     x_.v = init_vel;
     x_.q = init_quat;
-    x_.q.normalize(); // Ensure unit norm
+    x_.q.normalize();
     x_.ba = init_ba;
     x_.bg = init_bg;
+    x_.bbaro = init_bbaro;
     P_ = init_P;
 }
 
-// [Source: 104] Skew Symmetric Matrix
 Eigen::Matrix3d EsEkf::skew(const Eigen::Vector3d& v) {
     Eigen::Matrix3d m;
     m << 0, -v.z(), v.y(),
@@ -73,7 +69,6 @@ Eigen::Matrix3d EsEkf::skew(const Eigen::Vector3d& v) {
     return m;
 }
 
-// [Source: 150] Earth Radii
 void EsEkf::compute_radius(double lat, double& RM, double& RN) {
     double sin_lat = sin(lat);
     double sin2_lat = sin_lat * sin_lat;
@@ -83,68 +78,52 @@ void EsEkf::compute_radius(double lat, double& RM, double& RN) {
     RN = R0 / sqrt(den);
 }
 
-// [Source: 282] Prediction Step
 void EsEkf::predict(const ImuMeasurement& imu, double dt) {
-    // 1. Correct Measurements [Source: 285-286]
+    // Correct measurements
     Eigen::Vector3d f_b = imu.acc - x_.ba;
     Eigen::Vector3d w_b = imu.gyro - x_.bg;
 
-    // Current State
-    Eigen::Matrix3d C_b_n = x_.q.toRotationMatrix(); // Body to Nav DCM
+    Eigen::Matrix3d C_b_n = x_.q.toRotationMatrix();
     double lat = x_.p.x();
     double h = x_.p.z();
     
-    // Earth Parameters
     double RM, RN;
     compute_radius(lat, RM, RN);
 
-    // [Source: 140] Earth Rate in Nav Frame
+    // Earth rate in nav frame
     Eigen::Vector3d w_ie_n;
     w_ie_n << WE * cos(lat), 0.0, -WE * sin(lat);
 
-    // [Source: 145] Transport Rate in Nav Frame
+    // Transport rate
     Eigen::Vector3d w_en_n;
     w_en_n << x_.v.y() / (RN + h),
              -x_.v.x() / (RM + h),
-             -x_.v.x() * x_.v.y() * tan(lat) / (RN + h); // Small term often simplified, but keeping strictly per typical transport rate equations (Eq 28 in PDF has a typo/format issue, using standard def)
+             -x_.v.x() * x_.v.y() * tan(lat) / (RN + h);
 
-    // [Source: 147] Total Rotation
     Eigen::Vector3d w_in_n = w_ie_n + w_en_n;
     
-    // [Source: 290] Velocity Update (Mechanization)
-    // Gravity vector in Nav frame (approx WGS84 gravity formula or simple model)
-    // Simple model: g = [0, 0, g0] (Should use Somigliana for high precision)
-    Eigen::Vector3d g_n(0, 0, 9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat) - 0.0000058 * sin(2*lat)*sin(2*lat)) - 3.086e-6 * h); 
+    // Gravity (Somigliana)
+    Eigen::Vector3d g_n(0, 0, 
+        9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat) - 0.0000058 * sin(2*lat)*sin(2*lat)) 
+        - 3.086e-6 * h);
 
+    // Velocity mechanization
     Eigen::Vector3d v_dot = C_b_n * f_b + g_n - (2.0 * w_ie_n + w_en_n).cross(x_.v);
     Eigen::Vector3d v_next = x_.v + v_dot * dt;
 
-    // [Source: 291] Position Update
+    // Position mechanization
     Eigen::Vector3d p_dot;
     p_dot << x_.v.x() / (RM + h),
              x_.v.y() / ((RN + h) * cos(lat)),
-             -x_.v.z(); // Down is positive Z, so -v_D is rate of height change? 
-             // PDF Eq 291 uses Frv^-1 * v. 
-             // Standard NED: h_dot = -v_D. 
-             // PDF 2.1 defines r = [phi, lam, h].
-             // PDF Eq 67: r_k+1 = r_k + ...
-             // Let's stick to standard kinematic:
-             // lat_dot = v_N / (RM+h)
-             // lon_dot = v_E / ((RN+h)cos(lat))
-             // h_dot = -v_D
+             -x_.v.z();
     
-    // Update Nominal State (Integration)
     x_.p.x() += p_dot.x() * dt;
     x_.p.y() += p_dot.y() * dt;
-    x_.p.z() -= x_.v.z() * dt; // Height change
+    x_.p.z() -= x_.v.z() * dt;
     x_.v = v_next;
 
-    // [Source: 289] Attitude Update
-    // omega_nb_b = w_b - C_n_b * w_in_n [Source: 93]
+    // Attitude mechanization
     Eigen::Vector3d w_nb_b = w_b - C_b_n.transpose() * w_in_n;
-    
-    // Quaternion integration: q_new = q * exp(0.5 * w * dt)
-    // For small dt, exp(0.5*w*dt) approx [1, 0.5*w*dt]
     Eigen::Vector3d angle = w_nb_b * dt;
     double angle_norm = angle.norm();
     Eigen::Quaterniond dq;
@@ -154,62 +133,50 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
         dq = Eigen::Quaterniond(1, 0.5*angle.x(), 0.5*angle.y(), 0.5*angle.z());
         dq.normalize();
     }
-    x_.q = x_.q * dq; // Eigen multiplies q_current * q_increment
+    x_.q = x_.q * dq;
     x_.q.normalize();
 
+    // Baro bias: no dynamics on nominal state (bias just persists)
 
-    // --- Build F Matrix [Source: 115] ---
+    // --- Build F Matrix ---
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> F = Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Zero();
 
-    // F_rr (Pos-Pos) [Source: 118] - simplified for readability
-    // Note: Full derivation of Frr involves many terms dependent on gravity/radii.
-    // Commonly simplified in implementation unless high precision required. 
-    // Using simple F_rr identity relation for position evolution.
-    // Actually, F_pos_vel is the dominant term.
-    
-    // F_rv (Pos-Vel) [Source: 122 -> Eq 22 implies transformation from vel to angle rates]
+    // F_rv (Pos-Vel)
     F(IDX_POS, IDX_VEL)     = 1.0 / (RM + h);
     F(IDX_POS+1, IDX_VEL+1) = 1.0 / ((RN + h) * cos(lat));
     F(IDX_POS+2, IDX_VEL+2) = -1.0;
 
-    // F_vr (Vel-Pos) - Gravity and Coriolis gradients (often neglected in rough code, but needed for 'full')
-    // Leaving as 0 for brevity unless strictly needed, dominant term is F_vv.
-
-    // F_vv (Vel-Vel) - Coriolis terms
+    // F_vv (Vel-Vel) - Coriolis
     Eigen::Vector3d w_term = 2.0 * w_ie_n + w_en_n;
     F.block<3,3>(IDX_VEL, IDX_VEL) = -skew(w_term);
 
-    // F_v_theta (Vel-Att) [Source: 127]
+    // F_v_theta (Vel-Att)
     Eigen::Vector3d f_n = C_b_n * f_b;
     F.block<3,3>(IDX_VEL, IDX_ATT) = -skew(f_n);
 
-    // F_v_ba (Vel-AccelBias) [Source: 130]
+    // F_v_ba (Vel-AccelBias)
     F.block<3,3>(IDX_VEL, IDX_BA) = -C_b_n;
 
-    // F_theta_theta (Att-Att) [Source: 133]
+    // F_theta_theta (Att-Att)
     F.block<3,3>(IDX_ATT, IDX_ATT) = -skew(w_in_n);
 
-    // F_theta_bg (Att-GyroBias) [Source: 136]
+    // F_theta_bg (Att-GyroBias)
     F.block<3,3>(IDX_ATT, IDX_BG) = -C_b_n;
 
-    // Gauss-Markov Bias Dynamics
-    // F_ba_ba (AccelBias-AccelBias) - Gauss-Markov correlation
+    // Gauss-Markov bias dynamics
     F.block<3,3>(IDX_BA, IDX_BA).diagonal() = -1.0 / tau_a_.array();
-
-    // F_bg_bg (GyroBias-GyroBias) - Gauss-Markov correlation  
     F.block<3,3>(IDX_BG, IDX_BG).diagonal() = -1.0 / tau_g_.array();
+    F(IDX_BBARO, IDX_BBARO) = -1.0 / tau_bbaro_;
 
-    // --- Build G Matrix [Source: 185] ---
+    // --- Build G Matrix ---
     Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>::Zero();
-    G.block<3,3>(IDX_VEL, 0) = -C_b_n;      // v - eta_a
-    G.block<3,3>(IDX_ATT, 3) = -C_b_n;      // theta - eta_g
-    G.block<3,3>(IDX_BA, 6)  = Eigen::Matrix3d::Identity(); // ba - w_ka
-    G.block<3,3>(IDX_BG, 9)  = Eigen::Matrix3d::Identity(); // bg - w_kg
+    G.block<3,3>(IDX_VEL, 0) = -C_b_n;                        // vel - accel noise
+    G.block<3,3>(IDX_ATT, 3) = -C_b_n;                        // att - gyro noise
+    G.block<3,3>(IDX_BA, 6)  = Eigen::Matrix3d::Identity();   // ba - driving noise
+    G.block<3,3>(IDX_BG, 9)  = Eigen::Matrix3d::Identity();   // bg - driving noise
+    G(IDX_BBARO, 12) = 1.0;                                   // bbaro - driving noise
 
-    // --- Van Loan Discretization [Source: 205-214] ---
-    // A = [-F  G*Qc*G^T] * dt
-    //     [0   F^T     ]
-    // 2n x 2n matrix
+    // --- Van Loan Discretization ---
     Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> A;
     A.setZero();
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> GQGt = G * Qc_ * G.transpose();
@@ -218,99 +185,59 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     A.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR) = GQGt * dt;
     A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
 
-    // Matrix Exponential [Source: 211-212]
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
-    // for small dt, use Taylor expansion up to 2nd order !!! DOESNT WORK
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> Ivanloan = Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = Ivanloan + A + 0.5 * A * A; // + O(dt^3)
+    // Taylor expansion for matrix exponential
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I_vl = 
+        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A;
 
-    // Extract Phi and Qd [Source: 214]
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Qd = Phi * B.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR);
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = 
+        B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Qd = 
+        Phi * B.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR);
 
-    // Symmetrize Qd [Source: 215]
     Qd = 0.5 * (Qd + Qd.transpose());
 
-    // --- Covariance Update [Source: 300] ---
     P_ = Phi * P_ * Phi.transpose() + Qd;
 }
 
-// [Source: 313] Error Injection
 void EsEkf::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
-    Eigen::Vector3d dr = dx.segment<3>(IDX_POS);
-    Eigen::Vector3d dv = dx.segment<3>(IDX_VEL);
+    x_.p += dx.segment<3>(IDX_POS);
+    x_.v += dx.segment<3>(IDX_VEL);
+    x_.ba += dx.segment<3>(IDX_BA);
+    x_.bg += dx.segment<3>(IDX_BG);
+    x_.bbaro += dx(IDX_BBARO);
+
+    // Attitude correction
     Eigen::Vector3d dtheta = dx.segment<3>(IDX_ATT);
-    Eigen::Vector3d dba = dx.segment<3>(IDX_BA);
-    Eigen::Vector3d dbg = dx.segment<3>(IDX_BG);
-
-    // [Source: 317] Pos
-    x_.p += dr;
-
-    // [Source: 319] Vel
-    x_.v += dv;
-
-    // [Source: 323] Accel Bias
-    x_.ba += dba;
-
-    // [Source: 325] Gyro Bias
-    x_.bg += dbg;
-
-    // [Source: 321] Attitude Correction
-    // q_plus = delta_q * q_minus
-    // delta_q = [0.5*theta; 1]
-    Eigen::Quaterniond dq;
     double theta_norm = dtheta.norm();
+    Eigen::Quaterniond dq;
     if(theta_norm > 1e-8) {
         dq = Eigen::Quaterniond(Eigen::AngleAxisd(theta_norm, dtheta / theta_norm));
     } else {
-         dq = Eigen::Quaterniond(1, 0.5*dtheta.x(), 0.5*dtheta.y(), 0.5*dtheta.z());
+        dq = Eigen::Quaterniond(1, 0.5*dtheta.x(), 0.5*dtheta.y(), 0.5*dtheta.z());
     }
-    
-    // PDF Eq 7: q+ = dq * q- (Left multiplication implies error in Navigation frame?)
-    // Source 58 says "error vector represents small rotation".
-    // Usually ES-EKF defines error in Global frame or Body frame. 
-    // If Eq 64 uses dq * q, it's global error. If q * dq, it's local.
-    // Based on the derivation of F_theta (Eq 133: -[w_in x]), the error is Global (Nav frame).
-    x_.q = dq * x_.q; 
+    x_.q = dq * x_.q;
     x_.q.normalize();
 }
 
 void EsEkf::update_internal(const Eigen::VectorXd& z, const Eigen::MatrixXd& H, const Eigen::MatrixXd& R) {
-    // [Source: 305] Innovation
-    // y is computed in the specific update functions to handle modular arithmetic (like angles) if necessary
-    // Here we assume linear y = z (residuals already computed)
-    
-    Eigen::VectorXd y = z; // In this design, 'z' passed in is the residual (Innovation)
-    
-    // [Source: 308] Innovation Covariance
+    Eigen::VectorXd y = z;
     Eigen::MatrixXd S = H * P_ * H.transpose() + R;
-
-    // [Source: 311] Kalman Gain
     Eigen::MatrixXd K = P_ * H.transpose() * S.inverse();
-
-    // [Source: 314] Error State Estimate
     Eigen::VectorXd dx = K * y;
 
-    // [Source: 329] Covariance Update (Joseph form)
+    // Joseph form covariance update
     Eigen::MatrixXd I = Eigen::MatrixXd::Identity(DIM_ERROR, DIM_ERROR);
     Eigen::MatrixXd I_KH = I - K * H;
     P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
-
-    // [Source: 331] Symmetrize
     P_ = 0.5 * (P_ + P_.transpose());
 
-    // Inject Errors
     inject_error(dx);
-
-    // [Source: 332] Reset Error State (Implicitly done by not storing 'dx' between steps)
 }
 
-// [Source: 242] GNSS Position Update
 void EsEkf::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
-    // Innovation: z_pos = r_GNSS - r_INS [Source: 244]
     Eigen::Vector3d innovation = pos_gnss - x_.p;
     
-    // H Matrix [Source: 247]
     Eigen::Matrix<double, 3, DIM_ERROR> H;
     H.setZero();
     H.block<3,3>(0, IDX_POS) = Eigen::Matrix3d::Identity();
@@ -318,12 +245,9 @@ void EsEkf::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::M
     update_internal(innovation, H, R);
 }
 
-// [Source: 249] GNSS Velocity Update
 void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
-    // Innovation [Source: 251]
     Eigen::Vector3d innovation = vel_gnss - x_.v;
 
-    // H Matrix [Source: 254]
     Eigen::Matrix<double, 3, DIM_ERROR> H;
     H.setZero();
     H.block<3,3>(0, IDX_VEL) = Eigen::Matrix3d::Identity();
@@ -331,15 +255,19 @@ void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::M
     update_internal(innovation, H, R);
 }
 
-// [Source: 256] Baro Update
 void EsEkf::update_barometer(double altitude, double R_var) {
-    // Innovation [Source: 262]
-    double innovation = altitude - x_.p.z(); // x_.p.z() is height
+    // Measurement model: z_baro = h_true + bbaro + noise
+    // So: h_true = z_baro - bbaro
+    // Innovation: (z_baro - bbaro) - h_state = z_baro - bbaro - h
+    // Rearranged: z_baro - (h + bbaro)
+    double innovation = altitude - (x_.p.z() + x_.bbaro);
 
-    // H Matrix [Source: 264]
+    // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
+    //      pos      vel     att     ba      bg    bbaro
     Eigen::Matrix<double, 1, DIM_ERROR> H;
     H.setZero();
-    H(0, IDX_POS + 2) = 1.0; // Index 2 is height error
+    H(0, IDX_POS + 2) = 1.0;   // dh
+    H(0, IDX_BBARO) = 1.0;     // dbbaro
 
     Eigen::Matrix<double, 1, 1> R_mat;
     R_mat(0,0) = R_var;

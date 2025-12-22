@@ -6,8 +6,9 @@ class EsEkfTest : public ::testing::Test {
 protected:
     EsEkf ekf;
     Eigen::Vector3d p0, v0, ba0, bg0;
+    double bb0;
     Eigen::Quaterniond q0;
-    Eigen::Matrix<double, 15, 15> P0;
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
     
     // Constants for checking results
     const double g_approx = 9.80665;
@@ -19,13 +20,14 @@ protected:
         q0 = Eigen::Quaterniond::Identity();
         ba0 = Eigen::Vector3d::Zero();
         bg0 = Eigen::Vector3d::Zero();
+        bb0 = 0.0;
         
         // [cite: 279] Initialize Covariance
         P0.setIdentity();
         P0.block<3,3>(0,0) *= 1.0;  // Position uncert
         P0.block<3,3>(3,3) *= 0.1;  // Velocity uncert
         
-        ekf.initialize(p0, v0, q0, ba0, bg0, P0);
+        ekf.initialize(p0, v0, q0, ba0, bg0, bb0, P0);
     }
 };
 

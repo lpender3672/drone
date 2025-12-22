@@ -11,8 +11,8 @@
 // [Source: 51] Error State Dimension: 15
 // [Source: 184] Noise Dimension: 12
 const int DIM_NOMINAL = 16;
-const int DIM_ERROR = 15;
-const int DIM_NOISE = 12;
+const int DIM_ERROR = 16;
+const int DIM_NOISE = 13;
 
 // Indices for Error State Vector [Source: 44]
 enum ErrorIdx {
@@ -20,7 +20,8 @@ enum ErrorIdx {
     IDX_VEL = 3,
     IDX_ATT = 6,
     IDX_BA  = 9,
-    IDX_BG  = 12
+    IDX_BG  = 12,
+    IDX_BBARO = 15
 };
 
 struct NominalState {
@@ -30,6 +31,7 @@ struct NominalState {
     Eigen::Quaterniond q;   // Attitude (Body to Nav) [Hamilton, scalar-last]
     Eigen::Vector3d ba;     // Accel Bias [m/s^2]
     Eigen::Vector3d bg;     // Gyro Bias [rad/s]
+    double bbaro;           // Barometric Altitude Bias [m]
 
     NominalState() {
         p.setZero();
@@ -37,6 +39,7 @@ struct NominalState {
         q.setIdentity(); // q = [0,0,0,1] in Eigen coefficients (x,y,z,w)
         ba.setZero();
         bg.setZero();
+        bbaro = 0.0;
     }
 };
 
@@ -58,6 +61,7 @@ public:
                     const Eigen::Quaterniond& init_quat,
                     const Eigen::Vector3d& init_ba,
                     const Eigen::Vector3d& init_bg,
+                    double init_bbaro,
                     const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P);
 
     // Prediction Step [Source: 282]
@@ -89,6 +93,7 @@ private:
 
     Eigen::Vector3d tau_a_;           // Accel bias correlation time [s]
     Eigen::Vector3d tau_g_;           // Gyro bias correlation time [s]
+    double tau_bbaro_;               // Baro bias correlation time [s]
 
     // Helpers
     Eigen::Matrix3d skew(const Eigen::Vector3d& v);
