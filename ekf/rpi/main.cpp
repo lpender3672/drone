@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     // GPS configuration (can be overridden via args)
     std::string gps_device = "/dev/ttyACM0";
     int gps_baudrate = 115200;
-    int gps_rate_hz = 5;
+    int gps_rate_hz = 10;
     
     if (argc > 1) gps_device = argv[1];
     if (argc > 2) gps_baudrate = std::stoi(argv[2]);
@@ -71,20 +71,24 @@ int main(int argc, char* argv[]) {
     // --- 3. Initial Alignment ---
     std::cout << "Collecting samples for initial alignment (2 seconds)..." << std::endl;
     Eigen::Vector3d sum_acc(0,0,0);
+    Eigen::Vector3d sum_comp(0,0,0);
     int sample_count = 0;
+    RTIMU_DATA initImuData;
 
     auto warmupStart = std::chrono::steady_clock::now();
     while (std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - warmupStart).count() < 2) {
         if (imu->IMURead()) {
-            RTIMU_DATA data = imu->getIMUData();
-            sum_acc += Eigen::Vector3d(data.accel.x(), data.accel.y(), data.accel.z());
+            initImuData = imu->getIMUData();
+            sum_acc += Eigen::Vector3d(initImuData.accel.x(), initImuData.accel.y(), initImuData.accel.z());
+            sum_comp += Eigen::Vector3d(initImuData.compass.x(), initImuData.compass.y(), initImuData.compass.z());
             sample_count++;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
     Eigen::Vector3d avg_acc = sum_acc / sample_count;
+    Eigen::Vector3d avg_comp = sum_comp / sample_count;
     double init_roll  = atan2(-avg_acc.y(), -avg_acc.z());
     double init_pitch = atan2(avg_acc.x(), sqrt(avg_acc.y()*avg_acc.y() + avg_acc.z()*avg_acc.z()));
 
@@ -100,6 +104,7 @@ int main(int argc, char* argv[]) {
     Eigen::Vector3d p0(45.0 * DEG_TO_RAD, 0.0, 100.0); // Default
     Eigen::Vector3d v0(0,0,0);
     bool gps_initialized = false;
+    GPSData gps_data;
 
     std::cout << "Waiting for GPS fix..." << std::endl;
     auto gps_wait_start = std::chrono::steady_clock::now();
@@ -107,7 +112,7 @@ int main(int argc, char* argv[]) {
     while (!gps_initialized && 
            std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::steady_clock::now() - gps_wait_start).count() < 30) {
-        GPSData gps_data;
+        
         if (gps.readData(gps_data, 1000) && gps_data.valid_position) {
             p0 = Eigen::Vector3d(
                 gps_data.latitude * DEG_TO_RAD,
@@ -122,22 +127,26 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    double bb0 = 0.0;
     if (!gps_initialized) {
         std::cout << "No GPS fix after 30s, using default position" << std::endl;
+    }
+    else if (pressure->pressureRead(initImuData) && initImuData.pressureValid) {
+        bb0 = calculateAltitude(initImuData.pressure) - gps_data.altitude_msl;
     }
 
     // --- 5. Initialize ESKF ---
     EsEkf ekf;
     Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
-    double bb0 = 0.0;
 
-    Eigen::Matrix<double, 15, 15> P0;
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
     P0.setIdentity();
     P0.block<3,3>(0,0) *= gps_initialized ? 1e-10 : 1e-6; // Tighter if GPS fix
     P0.block<3,3>(3,3) *= 0.1;
     P0.block<3,3>(6,6) *= 0.01;
     P0.block<3,3>(9,9) *= 0.01;
     P0.block<3,3>(12,12) *= 0.001;
+    P0(15,15) *= 0.001;
 
     ekf.initialize(p0, v0, q_init, ba0, bg0, bb0, P0);
 
@@ -159,7 +168,9 @@ int main(int argc, char* argv[]) {
         
         // --- IMU Predict (high rate) ---
         if (imu->IMURead()) {
-            RTIMU_DATA imuData = imu->getIMUData();
+
+            RTVector3 accel = imu->getAccel();
+            RTVector3 gyro = imu->getGyro();
             
             double dt = std::chrono::duration_cast<std::chrono::microseconds>(
                 now - lastTime).count() / 1e6;
@@ -168,11 +179,18 @@ int main(int argc, char* argv[]) {
 
             ImuMeasurement msg;
             msg.t = 0.0;
-            msg.acc = Eigen::Vector3d(imuData.accel.x(), imuData.accel.y(), imuData.accel.z()) * G_ACCEL;
-            msg.gyro = Eigen::Vector3d(imuData.gyro.x(), imuData.gyro.y(), imuData.gyro.z());
+            msg.acc = Eigen::Vector3d(accel.x(), accel.y(), accel.z()) * G_ACCEL;
+            msg.gyro = Eigen::Vector3d(gyro.x(), gyro.y(), gyro.z());
 
             ekf.predict(msg, dt);
             imu_count++;
+
+            if (imu_count % 5 == 0)
+            {
+                RTVector3 compass = imu->getCompass();
+                Eigen::Vector3d mag_body(compass.x(), compass.y(), compass.z());
+                ekf.update_magnetometer(mag_body, Eigen::Matrix3d::Identity() * 0.1);
+            }
         }
 
         auto baro_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastBaroRead).count();
@@ -255,6 +273,7 @@ int main(int argc, char* argv[]) {
         ins_data.attitude = state.q;
         ins_data.accel_bias = state.ba;
         ins_data.gyro_bias = state.bg;
+        ins_data.baro_bias = state.bbaro;
 
         insWriter.write(ins_data);
 

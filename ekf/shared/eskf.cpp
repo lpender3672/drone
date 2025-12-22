@@ -188,7 +188,9 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     // Taylor expansion for matrix exponential
     Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I_vl = 
         Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A;
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A + (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
+
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
 
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = 
         B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
@@ -256,10 +258,6 @@ void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::M
 }
 
 void EsEkf::update_barometer(double altitude, double R_var) {
-    // Measurement model: z_baro = h_true + bbaro + noise
-    // So: h_true = z_baro - bbaro
-    // Innovation: (z_baro - bbaro) - h_state = z_baro - bbaro - h
-    // Rearranged: z_baro - (h + bbaro)
     double innovation = altitude - (x_.p.z() + x_.bbaro);
 
     // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
@@ -276,4 +274,27 @@ void EsEkf::update_barometer(double altitude, double R_var) {
     z(0) = innovation;
 
     update_internal(z, H, R_mat);
+}
+
+void EsEkf::update_magnetometer(const Eigen::Vector3d& mag_body, 
+                                 const Eigen::Matrix3d& R) {
+
+    // apparently the magnetic field vector in southend on sea
+    static const Eigen::Vector3d m_n(0.40, 0.0, 0.92);
+    
+    Eigen::Matrix3d C_b_n = x_.q.toRotationMatrix();
+    Eigen::Matrix3d C_n_b = C_b_n.transpose();
+    
+    // Predicted measurement
+    Eigen::Vector3d mag_pred = C_n_b * m_n;
+    
+    // Innovation
+    Eigen::Vector3d innovation = mag_body.normalized() - mag_pred;
+    
+    // H matrix: d(mag_pred)/d(theta) = -C_n_b * skew(m_n)
+    Eigen::Matrix<double, 3, DIM_ERROR> H;
+    H.setZero();
+    H.block<3,3>(0, IDX_ATT) = C_n_b * skew(m_n);
+    
+    update_internal(innovation, H, R);
 }

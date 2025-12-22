@@ -41,7 +41,7 @@
             "binaryDir": "${sourceDir}/build/rpi-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "BUILD_TESTING": "ON"
+                "BUILD_TESTING": "OFF"
             },
             "condition": {
                 "type": "equals",

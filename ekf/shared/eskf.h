@@ -73,6 +73,8 @@ public:
     // [Source: 260] Barometric altitude update
     void update_barometer(double altitude, double R_var);
 
+    void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R);
+
     // Getters
     NominalState getState() const { return x_; }
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }

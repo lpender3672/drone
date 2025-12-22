@@ -37,6 +37,7 @@ struct INSData {
     Eigen::Quaterniond attitude;   // Quaternion [w, x, y, z]
     Eigen::Vector3d accel_bias;
     Eigen::Vector3d gyro_bias;
+    double baro_bias;
     
     INSData() : timestamp(0.0) {
         position_lla.setZero();
@@ -44,6 +45,7 @@ struct INSData {
         attitude.setIdentity();
         accel_bias.setZero();
         gyro_bias.setZero();
+        baro_bias = 0.0;
     }
 };
 
@@ -243,7 +245,7 @@ public:
         
         // Write header
         file_ << "timestamp,lat,lon,alt,vN,vE,vD,qw,qx,qy,qz,"
-              << "ba_x,ba_y,ba_z,bg_x,bg_y,bg_z" << std::endl;
+              << "ba_x,ba_y,ba_z,bg_x,bg_y,bg_z,baro_bias" << std::endl;
     }
     
     ~INSWriter() {
@@ -262,8 +264,8 @@ public:
             << data.attitude.w() << "," << data.attitude.x() << "," 
             << data.attitude.y() << "," << data.attitude.z() << ","
             << data.accel_bias.x() << "," << data.accel_bias.y() << "," << data.accel_bias.z() << ","
-            << data.gyro_bias.x() << "," << data.gyro_bias.y() << "," << data.gyro_bias.z();
-        
+            << data.gyro_bias.x() << "," << data.gyro_bias.y() << "," << data.gyro_bias.z() << "," << data.baro_bias;
+
         buffer_.push_back(oss.str());
         count_++;
         
