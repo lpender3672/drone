@@ -2,44 +2,30 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "msys2-debug",
-            "displayName": "MSYS2 Debug",
-            "description": "Debug build using MSYS2/MinGW64",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/msys2-debug",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
-            }
-        },
-        {
-            "name": "msys2-release",
-            "displayName": "MSYS2 Release",
-            "description": "Release build using MSYS2/MinGW64",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/msys2-release",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
-            }
-        },
-        {
-            "name": "msys2-testing",
-            "displayName": "MSYS2 Testing",
-            "description": "MSYS2 build with unit testing enabled",
-            "generator": "Ninja",
-            "binaryDir": "${sourceDir}/build/msys2-testing",
+            "name": "windows-debug",
+            "displayName": "Windows Debug",
+            "description": "Debug build with testing for Windows (MinGW64)",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build/windows-debug",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "BUILD_TESTING": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
             }
         },
         {
-            "name": "rpi-debug",
-            "displayName": "Raspberry Pi Debug",
-            "description": "Debug build for Raspberry Pi",
+            "name": "linux-debug",
+            "displayName": "Linux Debug",
+            "description": "Debug build with testing for Linux",
             "generator": "Unix Makefiles",
-            "binaryDir": "${sourceDir}/build/rpi-debug",
+            "binaryDir": "${sourceDir}/build/linux-debug",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_TESTING": "ON"
             },
             "condition": {
                 "type": "equals",
@@ -48,13 +34,14 @@
             }
         },
         {
-            "name": "rpi-release",
-            "displayName": "Raspberry Pi Release",
-            "description": "Release build for Raspberry Pi",
+            "name": "rpi-debug",
+            "displayName": "Raspberry Pi Debug",
+            "description": "Debug build with testing for Raspberry Pi",
             "generator": "Unix Makefiles",
-            "binaryDir": "${sourceDir}/build/rpi-release",
+            "binaryDir": "${sourceDir}/build/rpi-debug",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "BUILD_TESTING": "ON"
             },
             "condition": {
                 "type": "equals",
@@ -65,36 +52,36 @@
     ],
     "buildPresets": [
         {
-            "name": "msys2-debug",
-            "configurePreset": "msys2-debug",
-            "displayName": "Build MSYS2 Debug"
+            "name": "windows-debug",
+            "configurePreset": "windows-debug"
         },
         {
-            "name": "msys2-release",
-            "configurePreset": "msys2-release",
-            "displayName": "Build MSYS2 Release"
-        },
-        {
-            "name": "msys2-testing",
-            "configurePreset": "msys2-testing",
-            "displayName": "Build MSYS2 with Tests"
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
         },
         {
             "name": "rpi-debug",
-            "configurePreset": "rpi-debug",
-            "displayName": "Build Raspberry Pi Debug"
-        },
-        {
-            "name": "rpi-release",
-            "configurePreset": "rpi-release",
-            "displayName": "Build Raspberry Pi Release"
+            "configurePreset": "rpi-debug"
         }
     ],
     "testPresets": [
         {
-            "name": "msys2-testing",
-            "configurePreset": "msys2-testing",
-            "displayName": "Run MSYS2 Tests",
+            "name": "windows-test",
+            "configurePreset": "windows-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "linux-test",
+            "configurePreset": "linux-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "rpi-test",
+            "configurePreset": "rpi-debug",
             "output": {
                 "outputOnFailure": true
             }

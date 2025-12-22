@@ -58,7 +58,7 @@ public:
                     const Eigen::Quaterniond& init_quat,
                     const Eigen::Vector3d& init_ba,
                     const Eigen::Vector3d& init_bg,
-                    const Eigen::Matrix<double, 15, 15>& init_P);
+                    const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P);
 
     // Prediction Step [Source: 282]
     void predict(const ImuMeasurement& imu, double dt);
@@ -71,7 +71,7 @@ public:
 
     // Getters
     NominalState getState() const { return x_; }
-    Eigen::Matrix<double, 15, 15> getCovariance() const { return P_; }
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }
 
 private:
     // State and Covariance
@@ -94,7 +94,7 @@ private:
     Eigen::Matrix3d skew(const Eigen::Vector3d& v);
     void compute_radius(double lat, double& RM, double& RN);
     void update_internal(const Eigen::VectorXd& z, const Eigen::MatrixXd& H, const Eigen::MatrixXd& R);
-    void inject_error(const Eigen::Matrix<double, 15, 1>& dx);
+    void inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx);
 };
 
 #endif // ES_EKF_H

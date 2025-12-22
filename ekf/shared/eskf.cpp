@@ -54,7 +54,7 @@ void EsEkf::initialize(const Eigen::Vector3d& init_pos,
                        const Eigen::Quaterniond& init_quat,
                        const Eigen::Vector3d& init_ba,
                        const Eigen::Vector3d& init_bg,
-                       const Eigen::Matrix<double, 15, 15>& init_P) {
+                       const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P) {
     x_.p = init_pos;
     x_.v = init_vel;
     x_.q = init_quat;
@@ -236,7 +236,7 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
 }
 
 // [Source: 313] Error Injection
-void EsEkf::inject_error(const Eigen::Matrix<double, 15, 1>& dx) {
+void EsEkf::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
     Eigen::Vector3d dr = dx.segment<3>(IDX_POS);
     Eigen::Vector3d dv = dx.segment<3>(IDX_VEL);
     Eigen::Vector3d dtheta = dx.segment<3>(IDX_ATT);
