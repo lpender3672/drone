@@ -261,6 +261,15 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // --- EKF status check ---
+        EkfStatus status = ekf.getStatus(1e3);
+        if (status.diagonal_positive && status.variances_bounded) {
+            // good
+        } else {
+            std::cerr << "\nEKF Warning: Covariance issue detected at state" << status.suspect_state
+                        << ". Max Variance: " << status.max_variance << std::endl;
+        }
+
         // --- Logging ---
         NominalState state = ekf.getState();
         double t = std::chrono::duration_cast<std::chrono::milliseconds>(
