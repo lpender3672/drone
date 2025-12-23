@@ -25,6 +25,7 @@ enum ErrorIdx {
 };
 
 struct NominalState {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     // [Source: 40]
     Eigen::Vector3d p;      // Geodetic Position (lat, lon, h) [rad, rad, m]
     Eigen::Vector3d v;      // Velocity (NED) [m/s]

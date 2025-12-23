@@ -9,7 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(BUILD_TESTING "Build unit tests" OFF)
 
 # Find Dependencies
-find_package(Eigen3 CONFIG REQUIRED)
+# Use Eigen3 source directly from submodule
+include_directories(${CMAKE_SOURCE_DIR}/../eigen)
 
 # Platform Detection
 if(WIN32)
@@ -21,17 +22,17 @@ else()
 endif()
 
 # Include Directories
-include_directories(${EIGEN3_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/shared)
+include_directories(${CMAKE_SOURCE_DIR}/shared)
 
 # Raspberry Pi/Linux Executables
 if(RPI_BUILD)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O1")
 
     add_executable(ins_runner rpi/main.cpp rpi/gps_interface.cpp shared/eskf.cpp)
-    target_link_libraries(ins_runner RTIMULib Eigen3::Eigen)
+    target_link_libraries(ins_runner RTIMULib)
 
     add_executable(sense_hat_logger rpi/sense_hat_logger.cpp shared/eskf.cpp)
-    target_link_libraries(sense_hat_logger RTIMULib Eigen3::Eigen)
+    target_link_libraries(sense_hat_logger RTIMULib)
 
     add_executable(gps_logger rpi/gps_logger.cpp rpi/gps_interface.cpp)
 endif()
@@ -42,7 +43,7 @@ if(BUILD_TESTING)
     find_package(GTest REQUIRED)
     include(GoogleTest)
     add_executable(eskf_tests tests/test_eskf.cpp shared/eskf.cpp)
-    target_link_libraries(eskf_tests GTest::gtest GTest::gtest_main Eigen3::Eigen)
+    target_link_libraries(eskf_tests GTest::gtest GTest::gtest_main)
     target_include_directories(eskf_tests PRIVATE ${CMAKE_SOURCE_DIR}/shared)
     gtest_discover_tests(eskf_tests)
 endif()

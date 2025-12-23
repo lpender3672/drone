@@ -1,0 +1,11 @@
+﻿{
+  "name": "eskf",
+  "version": "0.1.0",
+  "description": "Shared navigation and EKF utilities",
+  "keywords": ["ekf", "navigation", "ins"],
+  "build": {
+    "srcDir": "shared"
+  },
+  "frameworks": ["arduino"],
+  "platforms": ["teensy"]
+}
