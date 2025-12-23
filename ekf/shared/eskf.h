@@ -43,6 +43,16 @@ struct NominalState {
     }
 };
 
+struct EkfStatus {
+    bool positive_definite_guaranteed;  // Gershgorin lower bounds all > 0
+    bool symmetry_ok;                   // P = P^T within tolerance
+    bool diagonal_positive;             // All P(i,i) > 0
+    bool variances_bounded;             // No runaway growth
+    double min_gershgorin_lower;        // Smallest eigenvalue lower bound
+    double max_variance;                // Largest diagonal element
+    int suspect_state;                  // Index of most concerning state (-1 if ok)
+};
+
 struct ImuMeasurement {
     double t;               // Timestamp [s]
     Eigen::Vector3d acc;    // Specific Force [m/s^2] (already converted from g) [Source: 201]
@@ -72,12 +82,12 @@ public:
     void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R);
     // [Source: 260] Barometric altitude update
     void update_barometer(double altitude, double R_var);
-
     void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R);
 
     // Getters
     NominalState getState() const { return x_; }
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }
+    EkfStatus getStatus(double max_variance_threshold) const;
 
 private:
     // State and Covariance
