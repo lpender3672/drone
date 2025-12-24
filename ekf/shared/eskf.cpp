@@ -222,15 +222,25 @@ void EsEkf::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
     x_.q.normalize();
 }
 
-void EsEkf::update_internal(const Eigen::VectorXd& z, const Eigen::MatrixXd& H, const Eigen::MatrixXd& R) {
-    Eigen::VectorXd y = z;
-    Eigen::MatrixXd S = H * P_ * H.transpose() + R;
-    Eigen::MatrixXd K = P_ * H.transpose() * S.inverse();
-    Eigen::VectorXd dx = K * y;
+template<int M>
+void EsEkf::update_internal(
+    const Eigen::Matrix<double, M, 1>& z,
+    const Eigen::Matrix<double, M, DIM_ERROR>& H,
+    const Eigen::Matrix<double, M, M>& R)
+{
+    Eigen::Matrix<double, M, M> S =
+        H * P_ * H.transpose() + R;
 
-    // Joseph form covariance update
-    Eigen::MatrixXd I = Eigen::MatrixXd::Identity(DIM_ERROR, DIM_ERROR);
-    Eigen::MatrixXd I_KH = I - K * H;
+    Eigen::Matrix<double, DIM_ERROR, M> K =
+        P_ * H.transpose() * S.inverse();
+
+    Eigen::Matrix<double, DIM_ERROR, 1> dx = K * z;
+
+    // Joseph form
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> I_KH =
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Identity()
+        - K * H;
+
     P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
     P_ = 0.5 * (P_ + P_.transpose());
 
@@ -244,7 +254,7 @@ void EsEkf::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::M
     H.setZero();
     H.block<3,3>(0, IDX_POS) = Eigen::Matrix3d::Identity();
 
-    update_internal(innovation, H, R);
+    update_internal<3>(innovation, H, R);
 }
 
 void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
@@ -254,7 +264,7 @@ void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::M
     H.setZero();
     H.block<3,3>(0, IDX_VEL) = Eigen::Matrix3d::Identity();
 
-    update_internal(innovation, H, R);
+    update_internal<3>(innovation, H, R);
 }
 
 void EsEkf::update_barometer(double altitude, double R_var) {
@@ -273,7 +283,7 @@ void EsEkf::update_barometer(double altitude, double R_var) {
     Eigen::VectorXd z(1);
     z(0) = innovation;
 
-    update_internal(z, H, R_mat);
+    update_internal<1>(z, H, R_mat);
 }
 
 void EsEkf::update_magnetometer(const Eigen::Vector3d& mag_body, 
@@ -296,7 +306,7 @@ void EsEkf::update_magnetometer(const Eigen::Vector3d& mag_body,
     H.setZero();
     H.block<3,3>(0, IDX_ATT) = C_n_b * skew(m_n);
     
-    update_internal(innovation, H, R);
+    update_internal<3>(innovation, H, R);
 }
 
 EkfStatus EsEkf::getStatus(double max_variance_threshold) const {
