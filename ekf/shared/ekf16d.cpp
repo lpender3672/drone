@@ -1,9 +1,9 @@
-#include "eskf.h"
+#include "ekf16d.h"
 #include "tuned_imu_params.h"
 
 using namespace IMUErrorModel;
 
-EsEkf::EsEkf() {
+EKF16d::EKF16d() {
     P_.setIdentity();
     Qc_.setZero();
 
@@ -44,7 +44,7 @@ EsEkf::EsEkf() {
         q_bbaro;                   // 12: baro bias driving noise
 }
 
-void EsEkf::initialize(const Eigen::Vector3d& init_pos, 
+void EKF16d::initialize(const Eigen::Vector3d& init_pos, 
                        const Eigen::Vector3d& init_vel, 
                        const Eigen::Quaterniond& init_quat,
                        const Eigen::Vector3d& init_ba,
@@ -61,7 +61,7 @@ void EsEkf::initialize(const Eigen::Vector3d& init_pos,
     P_ = init_P;
 }
 
-Eigen::Matrix3d EsEkf::skew(const Eigen::Vector3d& v) {
+Eigen::Matrix3d EKF16d::skew(const Eigen::Vector3d& v) {
     Eigen::Matrix3d m;
     m << 0, -v.z(), v.y(),
          v.z(), 0, -v.x(),
@@ -69,7 +69,7 @@ Eigen::Matrix3d EsEkf::skew(const Eigen::Vector3d& v) {
     return m;
 }
 
-void EsEkf::compute_radius(double lat, double& RM, double& RN) {
+void EKF16d::compute_radius(double lat, double& RM, double& RN) {
     double sin_lat = sin(lat);
     double sin2_lat = sin_lat * sin_lat;
     double den = 1.0 - e2 * sin2_lat;
@@ -78,7 +78,7 @@ void EsEkf::compute_radius(double lat, double& RM, double& RN) {
     RN = R0 / sqrt(den);
 }
 
-void EsEkf::predict(const ImuMeasurement& imu, double dt) {
+void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     // Correct measurements
     Eigen::Vector3d f_b = imu.acc - x_.ba;
     Eigen::Vector3d w_b = imu.gyro - x_.bg;
@@ -202,7 +202,7 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     P_ = Phi * P_ * Phi.transpose() + Qd;
 }
 
-void EsEkf::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
+void EKF16d::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
     x_.p += dx.segment<3>(IDX_POS);
     x_.v += dx.segment<3>(IDX_VEL);
     x_.ba += dx.segment<3>(IDX_BA);
@@ -223,7 +223,7 @@ void EsEkf::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
 }
 
 template<int M>
-void EsEkf::update_internal(
+void EKF16d::update_internal(
     const Eigen::Matrix<double, M, 1>& z,
     const Eigen::Matrix<double, M, DIM_ERROR>& H,
     const Eigen::Matrix<double, M, M>& R)
@@ -247,7 +247,7 @@ void EsEkf::update_internal(
     inject_error(dx);
 }
 
-void EsEkf::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
+void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = pos_gnss - x_.p;
     
     Eigen::Matrix<double, 3, DIM_ERROR> H;
@@ -257,7 +257,7 @@ void EsEkf::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::M
     update_internal<3>(innovation, H, R);
 }
 
-void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
+void EKF16d::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = vel_gnss - x_.v;
 
     Eigen::Matrix<double, 3, DIM_ERROR> H;
@@ -267,7 +267,7 @@ void EsEkf::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::M
     update_internal<3>(innovation, H, R);
 }
 
-void EsEkf::update_barometer(double altitude, double R_var) {
+void EKF16d::update_barometer(double altitude, double R_var) {
     double innovation = altitude - (x_.p.z() + x_.bbaro);
 
     // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
@@ -280,13 +280,13 @@ void EsEkf::update_barometer(double altitude, double R_var) {
     Eigen::Matrix<double, 1, 1> R_mat;
     R_mat(0,0) = R_var;
 
-    Eigen::VectorXd z(1);
+    Eigen::Matrix<double, 1, 1> z;
     z(0) = innovation;
 
     update_internal<1>(z, H, R_mat);
 }
 
-void EsEkf::update_magnetometer(const Eigen::Vector3d& mag_body, 
+void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body, 
                                  const Eigen::Matrix3d& R) {
 
     // apparently the magnetic field vector in southend on sea
@@ -309,7 +309,7 @@ void EsEkf::update_magnetometer(const Eigen::Vector3d& mag_body,
     update_internal<3>(innovation, H, R);
 }
 
-EkfStatus EsEkf::getStatus(double max_variance_threshold) const {
+EkfStatus EKF16d::getStatus(double max_variance_threshold) const {
     EkfStatus status;
     status.positive_definite_guaranteed = true;
     status.symmetry_ok = true;

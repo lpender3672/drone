@@ -1,0 +1,59 @@
+
+#ifndef SENSOR_IMU_H
+#define SENSOR_IMU_H
+
+#include "sensor_base.h"
+#include <Adafruit_BNO055.h>
+#include <ekf16d_opt.h>
+
+class ImuSensor : public SensorBase {
+private:
+    Adafruit_BNO055 bno_;
+    EKF16d_OPT* ekf_;
+    static constexpr double G_ACCEL = 9.80665;
+
+public:
+    ImuSensor(EKF16d_OPT* ekf, uint32_t interval_ms = 10)
+        : SensorBase("IMU", interval_ms), bno_(55, 0x28), ekf_(ekf) {}
+
+    Adafruit_BNO055* bno() { return &bno_; }
+
+    bool initialize() override {
+        if (!bno_.begin()) {
+            Serial.println("BNO055 init failed");
+            return false;
+        }
+        delay(100);
+        bno_.setExtCrystalUse(true);
+        bno_.setMode(OPERATION_MODE_AMG);
+        Serial.println("BNO055 initialized");
+        return true;
+    }
+
+    void update() override {
+        startTiming();
+
+        sensors_event_t accel, gyro;
+        bno_.getEvent(&accel, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+        bno_.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+        static uint32_t last_time = 0;
+        uint32_t now = millis();
+        float dt = (now - last_time) * 0.001f;
+        last_time = now;
+
+        if (dt > 0.0f && dt < 0.1f) {
+            ImuMeasurement msg;
+            msg.t = now * 0.001;
+            msg.acc = Eigen::Vector3d(accel.acceleration.x, 
+                                       accel.acceleration.y, 
+                                       accel.acceleration.z) / G_ACCEL;
+            msg.gyro = Eigen::Vector3d(gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
+            ekf_->predict(msg, dt);
+        }
+
+        endTiming();
+    }
+};
+
+#endif

@@ -1,11 +1,13 @@
-#ifndef ES_EKF_H
-#define ES_EKF_H
+#ifndef EKF16D_H
+#define EKF16D_H
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <unsupported/Eigen/MatrixFunctions>
 #include <cmath>
 #include <iostream>
+
+#include "ekf_defs.h"
 
 // [Source: 40] Nominal State Dimension: 16
 // [Source: 51] Error State Dimension: 15
@@ -44,27 +46,11 @@ struct NominalState {
     }
 };
 
-struct EkfStatus {
-    bool positive_definite_guaranteed;  // Gershgorin lower bounds all > 0
-    bool symmetry_ok;                   // P = P^T within tolerance
-    bool diagonal_positive;             // All P(i,i) > 0
-    bool variances_bounded;             // No runaway growth
-    double min_gershgorin_lower;        // Smallest eigenvalue lower bound
-    double max_variance;                // Largest diagonal element
-    int suspect_state;                  // Index of most concerning state (-1 if ok)
-};
-
-struct ImuMeasurement {
-    double t;               // Timestamp [s]
-    Eigen::Vector3d acc;    // Specific Force [m/s^2] (already converted from g) [Source: 201]
-    Eigen::Vector3d gyro;   // Angular Rate [rad/s]
-};
-
-class EsEkf {
+class EKF16d {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    EsEkf();
+    EKF16d();
 
     // Initialization [Source: 274]
     void initialize(const Eigen::Vector3d& init_pos, 
