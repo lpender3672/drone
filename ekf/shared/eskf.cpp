@@ -188,9 +188,9 @@ void EsEkf::predict(const ImuMeasurement& imu, double dt) {
     // Taylor expansion for matrix exponential
     Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I_vl = 
         Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A + (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A; //+ (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
 
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
 
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = 
         B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();

@@ -90,6 +90,8 @@ public:
     Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }
     EkfStatus getStatus(double max_variance_threshold) const;
 
+    void (*debugCallback)(const char* label) = nullptr;
+
 private:
     // State and Covariance
     NominalState x_;
