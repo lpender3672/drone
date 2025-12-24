@@ -6,7 +6,8 @@
 #include <csignal>
 #include <cmath>
 
-#include "eskf.h" 
+#include "ekf16d.h" 
+#include "tuned_ekf_params.h"
 #include "RTIMULib.h"
 #include "gps_interface.h"
 #include "sensor_io.h"
@@ -136,10 +137,10 @@ int main(int argc, char* argv[]) {
     }
 
     // --- 5. Initialize ESKF ---
-    EsEkf ekf;
+    EKF16d ekf(DEFAULT_PARAMS);
     Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
 
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
     P0.setIdentity();
     P0.block<3,3>(0,0) *= gps_initialized ? 1e-10 : 1e-6; // Tighter if GPS fix
     P0.block<3,3>(3,3) *= 0.1;
@@ -148,7 +149,9 @@ int main(int argc, char* argv[]) {
     P0.block<3,3>(12,12) *= 0.001;
     P0(15,15) *= 0.001;
 
-    ekf.initialize(p0, v0, q_init, ba0, bg0, bb0, P0);
+    Eigen::Matrix<double, DIM_STATE, 1> x0;
+    x0 << p0, v0, q_init, ba0, bg0, bb0;
+    ekf.initialize(x0, P0);
 
     // --- 6. Main Loop ---
     INSWriter insWriter("data/ekf_data.csv", 100);
@@ -178,7 +181,6 @@ int main(int argc, char* argv[]) {
             if (dt > 0.1) dt = 0.1;
 
             ImuMeasurement msg;
-            msg.t = 0.0;
             msg.acc = Eigen::Vector3d(accel.x(), accel.y(), accel.z()) * G_ACCEL;
             msg.gyro = Eigen::Vector3d(gyro.x(), gyro.y(), gyro.z());
 
@@ -221,10 +223,10 @@ int main(int argc, char* argv[]) {
                     double v_var = gps_data.vertical_accuracy * gps_data.vertical_accuracy;
                     
                     // Convert lat/lon accuracy from meters to radians
-                    NominalState state = ekf.getState();
-                    double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state.p.x()) * sin(state.p.x()));
+                    EKF16d::StateVector state = ekf.getState();
+                    double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state[IDX_POS]) * sin(state[IDX_POS+1]));
                     double lat_var = h_var / (R_N * R_N);
-                    double lon_var = h_var / (R_N * cos(state.p.x()) * R_N * cos(state.p.x()));
+                    double lon_var = h_var / (R_N * cos(state[IDX_POS]) * R_N * cos(state[IDX_POS]));
 
                     Eigen::Vector3d pos_gnss(
                         gps_data.latitude * DEG_TO_RAD,
@@ -271,18 +273,18 @@ int main(int argc, char* argv[]) {
         }
 
         // --- Logging ---
-        NominalState state = ekf.getState();
+        EKF16d::StateVector state = ekf.getState();
         double t = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - startTime).count() / 1000.0;
             
         INSData ins_data;
         ins_data.timestamp = t;
-        ins_data.position_lla = state.p;
-        ins_data.velocity = state.v;
-        ins_data.attitude = state.q;
-        ins_data.accel_bias = state.ba;
-        ins_data.gyro_bias = state.bg;
-        ins_data.baro_bias = state.bbaro;
+        ins_data.position_lla = state.segment<3>(IDX_POS);
+        ins_data.velocity = state.segment<3>(IDX_VEL);
+        ins_data.attitude = state.segment<4>(IDX_ATT);
+        ins_data.accel_bias = state.segment<3>(IDX_BA);
+        ins_data.gyro_bias = state.segment<3>(IDX_BG);
+        ins_data.baro_bias = state[IDX_BBARO];
 
         insWriter.write(ins_data);
 

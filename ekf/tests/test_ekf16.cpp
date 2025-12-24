@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
-#include "eskf.h"
+#include "ekf16d.h" 
 
 // Test Fixture for initializing common state
-class EsEkfTest : public ::testing::Test {
+class Ekf16Tests : public ::testing::Test {
 protected:
-    EsEkf ekf;
+    EKF16d ekf;
     Eigen::Vector3d p0, v0, ba0, bg0;
     double bb0;
     Eigen::Quaterniond q0;
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
     
     // Constants for checking results
     const double g_approx = 9.80665;
@@ -32,7 +32,7 @@ protected:
 };
 
 // 1. Initialization Test
-TEST_F(EsEkfTest, InitializationCorrect) {
+TEST_F(Ekf16Tests, InitializationCorrect) {
     NominalState state = ekf.getState();
     
     EXPECT_TRUE(state.p.isApprox(p0));
@@ -47,7 +47,7 @@ TEST_F(EsEkfTest, InitializationCorrect) {
 
 // 2. Stationary Prediction Test
 // Checks if the filter maintains effectively zero velocity when proper gravity compensation is applied.
-TEST_F(EsEkfTest, StationaryHold) {
+TEST_F(Ekf16Tests, StationaryHold) {
     ImuMeasurement imu;
     imu.t = 0.0;
     // Specific force in body frame when stationary = -Gravity (pointing UP)
@@ -73,7 +73,7 @@ TEST_F(EsEkfTest, StationaryHold) {
 
 // 3. Integration Test (Constant Acceleration)
 // Apply 1 m/s^2 forward acceleration (plus gravity)
-TEST_F(EsEkfTest, ForwardAcceleration) {
+TEST_F(Ekf16Tests, ForwardAcceleration) {
     ImuMeasurement imu;
     double forward_accel = 1.0;
     double g_local = 9.780327;
@@ -111,7 +111,7 @@ TEST_F(EsEkfTest, ForwardAcceleration) {
 // 4. Covariance Growth Test
 // [cite: 300] P_new = Phi * P * Phi' + Qd
 // Process noise should increase uncertainty during prediction without corrections.
-TEST_F(EsEkfTest, CovarianceGrowth) {
+TEST_F(Ekf16Tests, CovarianceGrowth) {
     Eigen::MatrixXd P_initial = ekf.getCovariance();
     
     ImuMeasurement imu;
@@ -130,7 +130,7 @@ TEST_F(EsEkfTest, CovarianceGrowth) {
 // 5. Update Test (Position)
 // [cite: 244] Innovation z = r_gnss - r_ins
 // [cite: 317] State correction r+ = r- + dr
-TEST_F(EsEkfTest, GnssPositionCorrection) {
+TEST_F(Ekf16Tests, GnssPositionCorrection) {
     // 1. Move state away from 0 slightly via prediction or manual injection
     // (Here we just assume it's at 0,0,0)
     
@@ -156,7 +156,7 @@ TEST_F(EsEkfTest, GnssPositionCorrection) {
 
 // 6. Quaternion Normalization Check
 // [cite: 327] "Normalize quaternion: q+ <- q+ / ||q+||"
-TEST_F(EsEkfTest, QuaternionNormalizationAfterUpdate) {
+TEST_F(Ekf16Tests, QuaternionNormalizationAfterUpdate) {
     // Inject a large update that might de-normalize if not handled
     Eigen::Vector3d gnss_vel(100, 0, 0); 
     Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * 0.1;
@@ -169,7 +169,7 @@ TEST_F(EsEkfTest, QuaternionNormalizationAfterUpdate) {
 
 // 7. Van Loan Discretization Logic Check
 // Indirectly testing [cite: 205] by checking if P stays symmetric
-TEST_F(EsEkfTest, CovarianceSymmetry) {
+TEST_F(Ekf16Tests, CovarianceSymmetry) {
     ImuMeasurement imu;
     imu.acc << 0, 0, -9.8;
     imu.gyro << 0.1, 0, 0; // Some rotation

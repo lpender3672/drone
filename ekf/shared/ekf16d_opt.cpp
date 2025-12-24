@@ -50,7 +50,7 @@ void EKF16d_OPT::initialize(const Eigen::Vector3d& init_pos,
                        const Eigen::Vector3d& init_ba,
                        const Eigen::Vector3d& init_bg,
                        double init_bbaro,
-                       const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P) {
+                       const Eigen::Matrix<double, DIM_STATE, DIM_STATE>& init_P) {
     x_.p = init_pos;
     x_.v = init_vel;
     x_.q = init_quat;
@@ -227,24 +227,24 @@ void EKF16d_OPT::predict(const ImuMeasurement& imu, double dt) {
     GQGt.noalias() = G * Qc_ * G.transpose();
 
     A.setZero();
-    A.block<DIM_ERROR, DIM_ERROR>(0, 0) = -F * dt;
-    A.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR) = GQGt * dt;
-    A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
+    A.block<DIM_STATE, DIM_STATE>(0, 0) = -F * dt;
+    A.block<DIM_STATE, DIM_STATE>(0, DIM_STATE) = GQGt * dt;
+    A.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE) = F.transpose() * dt;
 
     // Taylor expansion: B = I + A + 0.5*A*A
     A2.noalias() = A * A;
     B = A;
     B += 0.5 * A2;
     // Add identity (just diagonal)
-    for (int i = 0; i < 2*DIM_ERROR; ++i) {
+    for (int i = 0; i < 2*DIM_STATE; ++i) {
         B(i, i) += 1.0;
     }
 
     auto& Phi = scratch_.Phi;
     auto& Qd = scratch_.Qd;
     
-    Phi = B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
-    Qd.noalias() = Phi * B.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR);
+    Phi = B.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE).transpose();
+    Qd.noalias() = Phi * B.block<DIM_STATE, DIM_STATE>(0, DIM_STATE);
     
     // Symmetrize
     Qd = 0.5 * (Qd + Qd.transpose());
@@ -256,7 +256,7 @@ void EKF16d_OPT::predict(const ImuMeasurement& imu, double dt) {
     P_ += Qd;
 }
 
-void EKF16d_OPT::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
+void EKF16d_OPT::inject_error(const Eigen::Matrix<double, DIM_STATE, 1>& dx) {
     x_.p += dx.segment<3>(IDX_POS);
     x_.v += dx.segment<3>(IDX_VEL);
     x_.ba += dx.segment<3>(IDX_BA);
@@ -308,7 +308,7 @@ void EKF16d_OPT::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eig
     
     // Joseph form: P = (I-KH)*P*(I-KH)' + K*R*K'
     I_KH.noalias() = -K * H;
-    for (int i = 0; i < DIM_ERROR; ++i) I_KH(i,i) += 1.0;
+    for (int i = 0; i < DIM_STATE; ++i) I_KH(i,i) += 1.0;
     
     scratch_.Phi_P.noalias() = I_KH * P_;
     P_.noalias() = scratch_.Phi_P * I_KH.transpose();
@@ -343,7 +343,7 @@ void EKF16d_OPT::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eig
     dx.noalias() = K * z;
     
     I_KH.noalias() = -K * H;
-    for (int i = 0; i < DIM_ERROR; ++i) I_KH(i,i) += 1.0;
+    for (int i = 0; i < DIM_STATE; ++i) I_KH(i,i) += 1.0;
     
     scratch_.Phi_P.noalias() = I_KH * P_;
     P_.noalias() = scratch_.Phi_P * I_KH.transpose();
@@ -378,7 +378,7 @@ void EKF16d_OPT::update_barometer(double altitude, double R_var) {
     
     // Joseph form
     I_KH.noalias() = -K * H;
-    for (int i = 0; i < DIM_ERROR; ++i) I_KH(i,i) += 1.0;
+    for (int i = 0; i < DIM_STATE; ++i) I_KH(i,i) += 1.0;
     
     scratch_.Phi_P.noalias() = I_KH * P_;
     P_.noalias() = scratch_.Phi_P * I_KH.transpose();
@@ -427,7 +427,7 @@ void EKF16d_OPT::update_magnetometer(const Eigen::Vector3d& mag_body, const Eige
     dx.noalias() = K * z;
     
     I_KH.noalias() = -K * H;
-    for (int i = 0; i < DIM_ERROR; ++i) I_KH(i,i) += 1.0;
+    for (int i = 0; i < DIM_STATE; ++i) I_KH(i,i) += 1.0;
     
     scratch_.Phi_P.noalias() = I_KH * P_;
     P_.noalias() = scratch_.Phi_P * I_KH.transpose();

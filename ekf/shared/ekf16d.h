@@ -7,13 +7,12 @@
 #include <cmath>
 #include <iostream>
 
-#include "ekf_defs.h"
+#include "ekf.h"
 
 // [Source: 40] Nominal State Dimension: 16
 // [Source: 51] Error State Dimension: 15
 // [Source: 184] Noise Dimension: 12
-const int DIM_NOMINAL = 16;
-const int DIM_ERROR = 16;
+const int DIM_STATE = 16;
 const int DIM_NOISE = 13;
 
 // Indices for Error State Vector [Source: 44]
@@ -46,20 +45,11 @@ struct NominalState {
     }
 };
 
-class EKF16d {
+class EKF16d : public EKF<DIM_STATE, DIM_NOISE> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-    EKF16d();
-
-    // Initialization [Source: 274]
-    void initialize(const Eigen::Vector3d& init_pos, 
-                    const Eigen::Vector3d& init_vel, 
-                    const Eigen::Quaterniond& init_quat,
-                    const Eigen::Vector3d& init_ba,
-                    const Eigen::Vector3d& init_bg,
-                    double init_bbaro,
-                    const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P);
+    explicit EKF16d(const EkfErrorParameters& p);
 
     // Prediction Step [Source: 282]
     void predict(const ImuMeasurement& imu, double dt);
@@ -71,20 +61,17 @@ public:
     void update_barometer(double altitude, double R_var);
     void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R);
 
-    // Getters
-    NominalState getState() const { return x_; }
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }
-    EkfStatus getStatus(double max_variance_threshold) const;
-
     void (*debugCallback)(const char* label) = nullptr;
 
-private:
-    // State and Covariance
-    NominalState x_;
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P_;
+    auto pos()       { return x_.segment<3>(IDX_POS); }
+    auto vel()       { return x_.segment<3>(IDX_VEL); }
+    auto ba()        { return x_.segment<3>(IDX_BA); }
+    auto bg()        { return x_.segment<3>(IDX_BG); }
+    double& bbaro()  { return x_(IDX_BBARO); }
+    Eigen::Quaterniond& q() { return q_; }
 
-    // Process Noise Spectral Density [Source: 190]
-    Eigen::Matrix<double, DIM_NOISE, DIM_NOISE> Qc_;
+private:
+    Eigen::Quaterniond q_;
 
     // Constants [Source: 148-150, 140]
     const double R0 = 6378137.0;            // Equatorial Radius
@@ -103,9 +90,9 @@ private:
     template<int M>
     void update_internal(
         const Eigen::Matrix<double, M, 1>& z,
-        const Eigen::Matrix<double, M, DIM_ERROR>& H,
+        const Eigen::Matrix<double, M, DIM_STATE>& H,
         const Eigen::Matrix<double, M, M>& R);
-    void inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx);
+    void inject_error(const Eigen::Matrix<double, DIM_STATE, 1>& dx);
 };
 
 #endif // ES_EKF_H

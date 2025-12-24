@@ -1,73 +1,90 @@
 #include "ekf16d.h"
-#include "tuned_imu_params.h"
+#include "tuned_ekf_params.h"
 
-using namespace IMUErrorModel;
 
-EKF16d::EKF16d() {
+EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_STATE, DIM_NOISE>(p)
+{
     P_.setIdentity();
     Qc_.setZero();
 
-    // Load gyro parameters (rad/s units)
-    Eigen::Vector3d N_gyro(GYRO_X_N, GYRO_Y_N, GYRO_Z_N);
-    Eigen::Vector3d B_gyro(GYRO_X_B, GYRO_Y_B, GYRO_Z_B);
-    Eigen::Vector3d Tp_gyro(GYRO_X_TP, GYRO_Y_TP, GYRO_Z_TP);
+    // --- Gyro parameters (rad/s units) ---
+    Eigen::Vector3d N_gyro(
+        p.gyro_x_n,
+        p.gyro_y_n,
+        p.gyro_z_n
+    );
 
-    // Load accel parameters (m/s² units)
-    Eigen::Vector3d N_acc(ACCEL_X_N, ACCEL_Y_N, ACCEL_Z_N);
-    Eigen::Vector3d B_acc(ACCEL_X_B, ACCEL_Y_B, ACCEL_Z_B);
-    Eigen::Vector3d Tp_acc(ACCEL_X_TP, ACCEL_Y_TP, ACCEL_Z_TP);
+    Eigen::Vector3d B_gyro(
+        p.gyro_x_b,
+        p.gyro_y_b,
+        p.gyro_z_b
+    );
 
-    // Load baro parameters (m units)
-    double N_baro = BARO_ALTITUDE_N;
-    double B_baro = BARO_ALTITUDE_B;
-    double Tp_baro = 1e6; // Large time constant to approximate white noise
+    Eigen::Vector3d Tp_gyro(
+        p.gyro_x_tp,
+        p.gyro_y_tp,
+        p.gyro_z_tp
+    );
 
-    // Gauss-Markov time constants
-    tau_g_ = Tp_gyro / 1.89;
-    tau_a_ = Tp_acc / 1.89;
-    tau_bbaro_ = Tp_baro / 1.89;
+    // --- Accelerometer parameters (m/s^2 units) ---
+    Eigen::Vector3d N_acc(
+        p.accel_x_n,
+        p.accel_y_n,
+        p.accel_z_n
+    );
 
-    // Compute driving noise variances
-    Eigen::Vector3d sigma_ba = B_acc.array().square() / (tau_a_.array() * 0.4365 * 0.4365);
-    Eigen::Vector3d sigma_bg = B_gyro.array().square() / (tau_g_.array() * 0.4365 * 0.4365);
-    double sigma_bbaro = (B_baro * B_baro) / (tau_bbaro_ * 0.4365 * 0.4365);
+    Eigen::Vector3d B_acc(
+        p.accel_x_b,
+        p.accel_y_b,
+        p.accel_z_b
+    );
 
-    Eigen::Vector3d q_ba = 2.0 * sigma_ba.array().square() / tau_a_.array();
-    Eigen::Vector3d q_bg = 2.0 * sigma_bg.array().square() / tau_g_.array();
-    double q_bbaro = 2.0 * sigma_bbaro * sigma_bbaro / tau_bbaro_;
+    Eigen::Vector3d Tp_acc(
+        p.accel_x_tp,
+        p.accel_y_tp,
+        p.accel_z_tp
+    );
 
-    Qc_.diagonal() << 
-        N_gyro.array().square(),   // 0-2: gyro noise
-        N_acc.array().square(),    // 3-5: accel noise
-        q_ba,                      // 6-8: accel bias driving noise
-        q_bg,                      // 9-11: gyro bias driving noise
-        q_bbaro;                   // 12: baro bias driving noise
+    // --- Barometer parameters (m units) ---
+    const double N_baro  = p.baro_altitude_n;
+    const double B_baro  = p.baro_altitude_b;
+    const double Tp_baro = p.baro_altitude_tp;
+
+    // --- Gauss–Markov time constants ---
+    tau_g_      = Tp_gyro / 1.89;
+    tau_a_      = Tp_acc  / 1.89;
+    tau_bbaro_  = Tp_baro / 1.89;
+
+    // --- Driving noise variances ---
+    constexpr double k = 0.4365;
+
+    Eigen::Vector3d sigma_ba =
+        B_acc.array().square() / (tau_a_.array() * k * k);
+
+    Eigen::Vector3d sigma_bg =
+        B_gyro.array().square() / (tau_g_.array() * k * k);
+
+    const double sigma_bbaro =
+        (B_baro * B_baro) / (tau_bbaro_ * k * k);
+
+    Eigen::Vector3d q_ba =
+        2.0 * sigma_ba.array().square() / tau_a_.array();
+
+    Eigen::Vector3d q_bg =
+        2.0 * sigma_bg.array().square() / tau_g_.array();
+
+    const double q_bbaro =
+        2.0 * sigma_bbaro * sigma_bbaro / tau_bbaro_;
+
+    // --- Continuous-time process noise matrix ---
+    Qc_.diagonal() <<
+        N_gyro.array().square(),  // 0–2: gyro white noise
+        N_acc.array().square(),   // 3–5: accel white noise
+        q_ba,                     // 6–8: accel bias driving noise
+        q_bg,                     // 9–11: gyro bias driving noise
+        q_bbaro;                  // 12: baro bias driving noise
 }
 
-void EKF16d::initialize(const Eigen::Vector3d& init_pos, 
-                       const Eigen::Vector3d& init_vel, 
-                       const Eigen::Quaterniond& init_quat,
-                       const Eigen::Vector3d& init_ba,
-                       const Eigen::Vector3d& init_bg,
-                       double init_bbaro,
-                       const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P) {
-    x_.p = init_pos;
-    x_.v = init_vel;
-    x_.q = init_quat;
-    x_.q.normalize();
-    x_.ba = init_ba;
-    x_.bg = init_bg;
-    x_.bbaro = init_bbaro;
-    P_ = init_P;
-}
-
-Eigen::Matrix3d EKF16d::skew(const Eigen::Vector3d& v) {
-    Eigen::Matrix3d m;
-    m << 0, -v.z(), v.y(),
-         v.z(), 0, -v.x(),
-         -v.y(), v.x(), 0;
-    return m;
-}
 
 void EKF16d::compute_radius(double lat, double& RM, double& RN) {
     double sin_lat = sin(lat);
@@ -79,48 +96,39 @@ void EKF16d::compute_radius(double lat, double& RM, double& RN) {
 }
 
 void EKF16d::predict(const ImuMeasurement& imu, double dt) {
-    // Correct measurements
-    Eigen::Vector3d f_b = imu.acc - x_.ba;
-    Eigen::Vector3d w_b = imu.gyro - x_.bg;
+    Eigen::Vector3d f_b = imu.acc - ba();
+    Eigen::Vector3d w_b = imu.gyro - bg();
 
-    Eigen::Matrix3d C_b_n = x_.q.toRotationMatrix();
-    double lat = x_.p.x();
-    double h = x_.p.z();
+    Eigen::Matrix3d C_b_n = q_.toRotationMatrix();
+    double lat = pos()(0);
+    double h = pos()(2);
     
     double RM, RN;
     compute_radius(lat, RM, RN);
 
-    // Earth rate in nav frame
-    Eigen::Vector3d w_ie_n;
-    w_ie_n << WE * cos(lat), 0.0, -WE * sin(lat);
+    Eigen::Vector3d w_ie_n(WE * cos(lat), 0.0, -WE * sin(lat));
 
-    // Transport rate
-    Eigen::Vector3d w_en_n;
-    w_en_n << x_.v.y() / (RN + h),
-             -x_.v.x() / (RM + h),
-             -x_.v.x() * x_.v.y() * tan(lat) / (RN + h);
+    Eigen::Vector3d w_en_n(
+        vel()(1) / (RN + h),
+        -vel()(0) / (RM + h),
+        -vel()(0) * vel()(1) * tan(lat) / (RN + h)
+    );
 
     Eigen::Vector3d w_in_n = w_ie_n + w_en_n;
     
-    // Gravity (Somigliana)
     Eigen::Vector3d g_n(0, 0, 
         9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat) - 0.0000058 * sin(2*lat)*sin(2*lat)) 
         - 3.086e-6 * h);
 
     // Velocity mechanization
-    Eigen::Vector3d v_dot = C_b_n * f_b + g_n - (2.0 * w_ie_n + w_en_n).cross(x_.v);
-    Eigen::Vector3d v_next = x_.v + v_dot * dt;
+    Eigen::Vector3d v_dot = C_b_n * f_b + g_n - (2.0 * w_ie_n + w_en_n).cross(vel());
+    Eigen::Vector3d v_next = vel() + v_dot * dt;
 
     // Position mechanization
-    Eigen::Vector3d p_dot;
-    p_dot << x_.v.x() / (RM + h),
-             x_.v.y() / ((RN + h) * cos(lat)),
-             -x_.v.z();
-    
-    x_.p.x() += p_dot.x() * dt;
-    x_.p.y() += p_dot.y() * dt;
-    x_.p.z() -= x_.v.z() * dt;
-    x_.v = v_next;
+    pos()(0) += vel()(0) / (RM + h) * dt;
+    pos()(1) += vel()(1) / ((RN + h) * cos(lat)) * dt;
+    pos()(2) -= vel()(2) * dt;
+    vel() = v_next;
 
     // Attitude mechanization
     Eigen::Vector3d w_nb_b = w_b - C_b_n.transpose() * w_in_n;
@@ -133,13 +141,13 @@ void EKF16d::predict(const ImuMeasurement& imu, double dt) {
         dq = Eigen::Quaterniond(1, 0.5*angle.x(), 0.5*angle.y(), 0.5*angle.z());
         dq.normalize();
     }
-    x_.q = x_.q * dq;
-    x_.q.normalize();
+    q_ = q_ * dq;
+    q_.normalize();
 
     // Baro bias: no dynamics on nominal state (bias just persists)
 
     // --- Build F Matrix ---
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> F = Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Zero();
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> F = Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Zero();
 
     // F_rv (Pos-Vel)
     F(IDX_POS, IDX_VEL)     = 1.0 / (RM + h);
@@ -169,7 +177,7 @@ void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     F(IDX_BBARO, IDX_BBARO) = -1.0 / tau_bbaro_;
 
     // --- Build G Matrix ---
-    Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>::Zero();
+    Eigen::Matrix<double, DIM_STATE, DIM_NOISE> G = Eigen::Matrix<double, DIM_STATE, DIM_NOISE>::Zero();
     G.block<3,3>(IDX_VEL, 0) = -C_b_n;                        // vel - accel noise
     G.block<3,3>(IDX_ATT, 3) = -C_b_n;                        // att - gyro noise
     G.block<3,3>(IDX_BA, 6)  = Eigen::Matrix3d::Identity();   // ba - driving noise
@@ -177,68 +185,68 @@ void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     G(IDX_BBARO, 12) = 1.0;                                   // bbaro - driving noise
 
     // --- Van Loan Discretization ---
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> A;
+    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> A;
     A.setZero();
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> GQGt = G * Qc_ * G.transpose();
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> GQGt = G * Qc_ * G.transpose();
 
-    A.block<DIM_ERROR, DIM_ERROR>(0, 0) = -F * dt;
-    A.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR) = GQGt * dt;
-    A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
+    A.block<DIM_STATE, DIM_STATE>(0, 0) = -F * dt;
+    A.block<DIM_STATE, DIM_STATE>(0, DIM_STATE) = GQGt * dt;
+    A.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE) = F.transpose() * dt;
 
     // Taylor expansion for matrix exponential
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I_vl = 
-        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
-    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A; //+ (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
+    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> I_vl = 
+        Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE>::Identity();
+    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> B = I_vl + A + 0.5 * A * A; //+ (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
 
-    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
+    //Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> B = A.exp();
 
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = 
-        B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Qd = 
-        Phi * B.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR);
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> Phi = 
+        B.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE).transpose();
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> Qd = 
+        Phi * B.block<DIM_STATE, DIM_STATE>(0, DIM_STATE);
 
     Qd = 0.5 * (Qd + Qd.transpose());
 
     P_ = Phi * P_ * Phi.transpose() + Qd;
 }
 
-void EKF16d::inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx) {
-    x_.p += dx.segment<3>(IDX_POS);
-    x_.v += dx.segment<3>(IDX_VEL);
-    x_.ba += dx.segment<3>(IDX_BA);
-    x_.bg += dx.segment<3>(IDX_BG);
-    x_.bbaro += dx(IDX_BBARO);
+void EKF16d::inject_error(const StateVector& dx) {
+    pos() += dx.segment<3>(IDX_POS);
+    vel() += dx.segment<3>(IDX_VEL);
+    ba()  += dx.segment<3>(IDX_BA);
+    bg()  += dx.segment<3>(IDX_BG);
+    bbaro() += dx(IDX_BBARO);
 
     // Attitude correction
     Eigen::Vector3d dtheta = dx.segment<3>(IDX_ATT);
     double theta_norm = dtheta.norm();
     Eigen::Quaterniond dq;
-    if(theta_norm > 1e-8) {
+    if (theta_norm > 1e-8) {
         dq = Eigen::Quaterniond(Eigen::AngleAxisd(theta_norm, dtheta / theta_norm));
     } else {
         dq = Eigen::Quaterniond(1, 0.5*dtheta.x(), 0.5*dtheta.y(), 0.5*dtheta.z());
     }
-    x_.q = dq * x_.q;
-    x_.q.normalize();
+    q_ = dq * q_;
+    q_.normalize();
 }
 
 template<int M>
 void EKF16d::update_internal(
     const Eigen::Matrix<double, M, 1>& z,
-    const Eigen::Matrix<double, M, DIM_ERROR>& H,
+    const Eigen::Matrix<double, M, DIM_STATE>& H,
     const Eigen::Matrix<double, M, M>& R)
 {
     Eigen::Matrix<double, M, M> S =
         H * P_ * H.transpose() + R;
 
-    Eigen::Matrix<double, DIM_ERROR, M> K =
+    Eigen::Matrix<double, DIM_STATE, M> K =
         P_ * H.transpose() * S.inverse();
 
-    Eigen::Matrix<double, DIM_ERROR, 1> dx = K * z;
+    Eigen::Matrix<double, DIM_STATE, 1> dx = K * z;
 
     // Joseph form
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> I_KH =
-        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Identity()
+    Eigen::Matrix<double, DIM_STATE, DIM_STATE> I_KH =
+        Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Identity()
         - K * H;
 
     P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
@@ -250,7 +258,7 @@ void EKF16d::update_internal(
 void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = pos_gnss - x_.p;
     
-    Eigen::Matrix<double, 3, DIM_ERROR> H;
+    Eigen::Matrix<double, 3, DIM_STATE> H;
     H.setZero();
     H.block<3,3>(0, IDX_POS) = Eigen::Matrix3d::Identity();
 
@@ -260,7 +268,7 @@ void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::
 void EKF16d::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = vel_gnss - x_.v;
 
-    Eigen::Matrix<double, 3, DIM_ERROR> H;
+    Eigen::Matrix<double, 3, DIM_STATE> H;
     H.setZero();
     H.block<3,3>(0, IDX_VEL) = Eigen::Matrix3d::Identity();
 
@@ -272,7 +280,7 @@ void EKF16d::update_barometer(double altitude, double R_var) {
 
     // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
     //      pos      vel     att     ba      bg    bbaro
-    Eigen::Matrix<double, 1, DIM_ERROR> H;
+    Eigen::Matrix<double, 1, DIM_STATE> H;
     H.setZero();
     H(0, IDX_POS + 2) = 1.0;   // dh
     H(0, IDX_BBARO) = 1.0;     // dbbaro
@@ -302,7 +310,7 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     Eigen::Vector3d innovation = mag_body.normalized() - mag_pred;
     
     // H matrix: d(mag_pred)/d(theta) = -C_n_b * skew(m_n)
-    Eigen::Matrix<double, 3, DIM_ERROR> H;
+    Eigen::Matrix<double, 3, DIM_STATE> H;
     H.setZero();
     H.block<3,3>(0, IDX_ATT) = C_n_b * skew(m_n);
     
@@ -321,7 +329,7 @@ EkfStatus EKF16d::getStatus(double max_variance_threshold) const {
 
     constexpr double SYM_TOL = 1e-10;
 
-    for (int i = 0; i < DIM_ERROR; i++) {
+    for (int i = 0; i < DIM_STATE; i++) {
         double diag = P_(i, i);
         
         // Check diagonal positive
@@ -343,7 +351,7 @@ EkfStatus EKF16d::getStatus(double max_variance_threshold) const {
         
         // Gershgorin: sum of absolute off-diagonal elements
         double off_diag_sum = 0.0;
-        for (int j = 0; j < DIM_ERROR; j++) {
+        for (int j = 0; j < DIM_STATE; j++) {
             if (i == j) continue;  
             off_diag_sum += std::abs(P_(i, j));
         
