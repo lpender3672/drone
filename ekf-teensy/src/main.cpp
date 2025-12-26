@@ -1,3 +1,9 @@
+// Eigen configuration - must be before including Eigen headers
+#define EIGEN_NO_MALLOC
+#define EIGEN_NO_DEBUG
+#define EIGEN_DONT_VECTORIZE
+#define EIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT
+
 #include <Eigen/Dense>
 #include <ekf16d.h>
 
@@ -10,19 +16,14 @@
 
 #include "tuned_ekf_params.h"
 
-#define EIGEN_NO_MALLOC
-#define EIGEN_NO_DEBUG
-#define EIGEN_DONT_VECTORIZE
-#define EIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT
-
 // Memory diagnostics
 extern unsigned long _heap_start;
 extern unsigned long _heap_end;
 extern char *__brkval;
 int freeram() { return (char *)&_heap_end - __brkval; }
 
-// EKF instance
-EKF16d ekf(DEFAULT_PARAMS);
+// EKF instance - use pointer for deferred initialization
+EKF16d* ekf = nullptr;
 
 // Sensor instances
 ImuSensor*  imuSensor;
@@ -36,6 +37,7 @@ SensorBase* sensors[NUM_SENSORS];
 
 void ekfDebug(const char* label) {
     Serial.printf("%s - free: %d\n", label, freeram());
+    Serial.flush();
 }
 
 void printTimings() {
@@ -84,8 +86,8 @@ void printStates() {
   last_print = millis();
   
   Serial.println("EKF States:");
-  Serial.printf("Position:  %.6f, %.6f, %.3f\n", ekf.pos().x(), ekf.pos().y(), ekf.pos().z());
-  Serial.printf("Velocity:  %.3f, %.3f, %.3f\n", ekf.vel().x(), ekf.vel().y(), ekf.vel().z());
+  Serial.printf("Position:  %.6f, %.6f, %.3f\n", ekf->pos().x(), ekf->pos().y(), ekf->pos().z());
+  Serial.printf("Velocity:  %.3f, %.3f, %.3f\n", ekf->vel().x(), ekf->vel().y(), ekf->vel().z());
   
 }
 
@@ -93,21 +95,29 @@ void setup() {
     Serial.begin(115200);
     while (!Serial && millis() < 3000);
 
+    Serial.println("Starting up...");
+    Serial.flush();
+
     Wire.begin();
     Wire.setClock(400000);
 
     Serial.println("Initializing EKF...");
-    ekf.initialize(
+    Serial.flush();
+    
+    // Create EKF on heap (deferred from static init)
+    ekf = new EKF16d(DEFAULT_PARAMS);
+    
+    ekf->initialize(
         EKF16d::NominalVector::Zero(),
         EKF16d::CovMatrix::Identity() * 0.1
     );
-    ekf.debugCallback = ekfDebug;
+    //ekf->debugCallback = ekfDebug;
 
     // Create sensors
-    imuSensor  = new ImuSensor(&ekf, 10);   // 100 Hz
-    gnssSensor = new GnssSensor(&ekf, 100); // 10 Hz
-    magSensor  = new MagSensor(imuSensor->bno(), &ekf, 20);  // 50 Hz
-    baroSensor = new BaroSensor(&ekf, 50);  // 20 Hz
+    imuSensor  = new ImuSensor(ekf, 10);   // 100 Hz
+    gnssSensor = new GnssSensor(ekf, 100); // 10 Hz
+    magSensor  = new MagSensor(imuSensor->bno(), ekf, 20);  // 50 Hz
+    baroSensor = new BaroSensor(ekf, 50);  // 20 Hz
 
     // Register in array
     sensors[0] = imuSensor;
@@ -138,5 +148,5 @@ void loop() {
     }
 
     //printTimings();
-    //printStates();
+    printStates();
 }

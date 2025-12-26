@@ -58,6 +58,8 @@ public:
         static_assert(Rows > 0 && Cols > 0, "Dynamic size not supported");
         int size = Rows * Cols;
 
+        //Serial.printf("Allocating matrix %dx%d at offset %d\n with remaining %d/%d\n", Rows, Cols, offset_, remaining(), capacity_);
+
         if (offset_ + size > capacity_)
         {
             while (true); // Buffer overflow
@@ -71,6 +73,9 @@ public:
     template<int Size>
     Eigen::Map<Eigen::Matrix<double, Size, 1>> vector() {
         static_assert(Size > 0, "Dynamic size not supported");
+
+        //Serial.printf("Allocating vector %d at offset %d\n with remaining %d/%d\n", Size, offset_, remaining(), capacity_);
+
         if (offset_ + Size > capacity_)
         {
             while (true); // Buffer overflow
@@ -104,8 +109,6 @@ public:
     using MeasMatrix = Eigen::Matrix<double, M, DIM_ERROR>;
     template<int M>
     using MeasCov = Eigen::Matrix<double, M, M>;
-
-    void (*debugCallback)(const char* label) = nullptr;
 
     explicit EKF(const EkfErrorParameters& p)
     { }
@@ -182,8 +185,8 @@ protected:
     CovMatrix P_;
     NoiseMatrix Qc_;
 
-    static constexpr int SCRATCH_SIZE = 10 * DIM_ERROR * DIM_ERROR;
-    alignas(32) double scratch_[SCRATCH_SIZE];
+    static constexpr int SCRATCH_SIZE = 20 * DIM_ERROR * DIM_ERROR;
+    double scratch_[SCRATCH_SIZE];
     BufferReserver reserver_{scratch_, SCRATCH_SIZE};
 
     template<int M>
@@ -192,21 +195,31 @@ protected:
         const MeasMatrix<M>& H,
         const MeasCov<M>& R)
     {
-        Eigen::Matrix<double, M, M> S =
-            H * P_ * H.transpose() + R;
+        auto PHt = reserver_.matrix<DIM_ERROR, M>();
+        PHt.noalias() = P_ * H.transpose();
 
-        Eigen::Matrix<double, DIM_ERROR, M> K =
-            P_ * H.transpose() * S.inverse();
+        auto S = reserver_.matrix<M, M>();
+        S.noalias() = H * PHt + R;
 
-        ErrorVector dx = K * z;
+        auto K = reserver_.matrix<DIM_ERROR, M>();
+        K.noalias() = PHt * S.inverse();
+
+        auto dx = reserver_.vector<DIM_ERROR>();
+        dx.noalias() = K * z;
 
         // Joseph form
-        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> I_KH =
-            Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Identity()
-            - K * H;
+        auto I_KH = reserver_.matrix<DIM_ERROR, DIM_ERROR>();
+        I_KH.setIdentity();
+        I_KH.noalias() -= K * H;
 
-        P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
-        P_ = 0.5 * (P_ + P_.transpose());
+        auto I_KH_P = reserver_.matrix<DIM_ERROR, DIM_ERROR>();
+        I_KH_P.noalias() = I_KH * P_;
+
+        auto KRKt = reserver_.matrix<DIM_ERROR, DIM_ERROR>();
+        KRKt.noalias() = K * R * K.transpose();
+
+        P_.noalias() = I_KH_P * I_KH.transpose() + KRKt;
+        P_ = 0.5 * (P_ + P_.transpose()).eval();
 
         inject_error(dx);
     }

@@ -4,6 +4,7 @@
   "description": "Shared navigation and EKF utilities",
   "keywords": ["ekf", "navigation", "ins"],
   "build": {
+    "libArchive": false,
     "srcDir": "shared"
   },
   "frameworks": ["arduino"],

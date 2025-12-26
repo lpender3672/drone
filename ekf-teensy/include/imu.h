@@ -48,7 +48,7 @@ public:
                                        accel.acceleration.y, 
                                        accel.acceleration.z) / G_ACCEL;
             msg.gyro = Eigen::Vector3d(gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
-            ekf_->predict(msg, dt);
+            //ekf_->predict(msg, dt);
         }
 
         endTiming();

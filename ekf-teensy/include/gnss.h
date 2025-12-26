@@ -24,7 +24,7 @@ private:
 
 public:
     GnssSensor(IEKF* ekf, uint32_t interval_ms = 100)
-        : SensorBase("GNSS", interval_ms) {}
+        : SensorBase("GNSS", interval_ms), ekf_(ekf) {}
 
     bool initialize() override {
         if (!gnss_.begin()) {
