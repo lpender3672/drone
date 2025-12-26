@@ -1,6 +1,6 @@
 #include "ekf16d.h"
 #include "tuned_ekf_params.h"
-
+#include "utils.h"
 
 EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>(p)
 {
@@ -86,15 +86,6 @@ EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NO
 }
 
 
-void EKF16d::compute_radius(double lat, double& RM, double& RN) {
-    double sin_lat = sin(lat);
-    double sin2_lat = sin_lat * sin_lat;
-    double den = 1.0 - e2 * sin2_lat;
-    
-    RM = (R0 * (1.0 - e2)) / pow(den, 1.5);
-    RN = R0 / sqrt(den);
-}
-
 void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     reserver_.reset();
 
@@ -120,12 +111,7 @@ void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     );
     Eigen::Vector3d w_in_n = w_ie_n + w_en_n;
 
-    Eigen::Vector3d g_n(
-        0, 0,
-        9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat)
-                    - 0.0000058 * sin(2*lat)*sin(2*lat))
-        - 3.086e-6 * h
-    );
+    Eigen::Vector3d g_n = gravity_ned(lat, h);
 
     // Velocity
     Eigen::Vector3d v_dot =

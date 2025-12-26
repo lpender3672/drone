@@ -3,9 +3,8 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
-#include <unsupported/Eigen/MatrixFunctions>
+
 #include <cmath>
-#include <iostream>
 
 #include "ekf.h"
 
@@ -73,8 +72,7 @@ public:
 private:
 
     // Constants [Source: 148-150, 140]
-    const double R0 = 6378137.0;            // Equatorial Radius
-    const double e2 = 0.00669437999014;     // Eccentricity squared
+
     const double g0 = 9.80665;              // Gravity
     const double WE = 7.292115e-5;          // Earth rotation rate
 
@@ -83,7 +81,6 @@ private:
     double tau_bbaro_;               // Baro bias correlation time [s]
 
     // Helpers
-    void compute_radius(double lat, double& RM, double& RN);
     void inject_error(const ErrorVector& dx);
 
     inline Eigen::Quaterniond quat_from_state(const Eigen::Vector4d& qv) {
