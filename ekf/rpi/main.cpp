@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
     EKF16d ekf(DEFAULT_PARAMS);
     Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
 
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
+    EKF16d::CovMatrix P0;
     P0.setIdentity();
     P0.block<3,3>(0,0) *= gps_initialized ? 1e-10 : 1e-6; // Tighter if GPS fix
     P0.block<3,3>(3,3) *= 0.1;
@@ -149,7 +149,7 @@ int main(int argc, char* argv[]) {
     P0.block<3,3>(12,12) *= 0.001;
     P0(15,15) *= 0.001;
 
-    Eigen::Matrix<double, DIM_STATE, 1> x0;
+    EKF16d::NominalVector x0;
     x0 << p0, v0, q_init, ba0, bg0, bb0;
     ekf.initialize(x0, P0);
 
@@ -223,10 +223,10 @@ int main(int argc, char* argv[]) {
                     double v_var = gps_data.vertical_accuracy * gps_data.vertical_accuracy;
                     
                     // Convert lat/lon accuracy from meters to radians
-                    EKF16d::StateVector state = ekf.getState();
-                    double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state[IDX_POS]) * sin(state[IDX_POS+1]));
+                    EKF16d::NominalVector state = ekf.getState();
+                    double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state[NOM_POS]) * sin(state[NOM_POS+1]));
                     double lat_var = h_var / (R_N * R_N);
-                    double lon_var = h_var / (R_N * cos(state[IDX_POS]) * R_N * cos(state[IDX_POS]));
+                    double lon_var = h_var / (R_N * cos(state[NOM_POS]) * R_N * cos(state[NOM_POS]));
 
                     Eigen::Vector3d pos_gnss(
                         gps_data.latitude * DEG_TO_RAD,
@@ -273,18 +273,18 @@ int main(int argc, char* argv[]) {
         }
 
         // --- Logging ---
-        EKF16d::StateVector state = ekf.getState();
+
         double t = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - startTime).count() / 1000.0;
             
         INSData ins_data;
         ins_data.timestamp = t;
-        ins_data.position_lla = state.segment<3>(IDX_POS);
-        ins_data.velocity = state.segment<3>(IDX_VEL);
-        ins_data.attitude = ekf.q();
-        ins_data.accel_bias = state.segment<3>(IDX_BA);
-        ins_data.gyro_bias = state.segment<3>(IDX_BG);
-        ins_data.baro_bias = state[IDX_BBARO];
+        ins_data.position_lla = ekf.pos();
+        ins_data.velocity = ekf.vel();
+        ins_data.attitude = ekf.q_vec();
+        ins_data.accel_bias = ekf.ba();
+        ins_data.gyro_bias = ekf.bg();
+        ins_data.baro_bias = ekf.bbaro();
 
         insWriter.write(ins_data);
 

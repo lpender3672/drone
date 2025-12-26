@@ -2,7 +2,7 @@
 #include "tuned_ekf_params.h"
 
 
-EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_STATE, DIM_NOISE>(p)
+EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>(p)
 {
     P_.setIdentity();
     Qc_.setZero();
@@ -96,13 +96,17 @@ void EKF16d::compute_radius(double lat, double& RM, double& RN) {
 }
 
 void EKF16d::predict(const ImuMeasurement& imu, double dt) {
-    Eigen::Vector3d f_b = imu.acc - ba();
+
+    Eigen::Vector3d f_b = imu.acc  - ba();
     Eigen::Vector3d w_b = imu.gyro - bg();
 
-    Eigen::Matrix3d C_b_n = q_.toRotationMatrix();
+    // Quaternion → DCM
+    Eigen::Quaterniond qn = quat_from_state(q_vec());
+    Eigen::Matrix3d C_b_n = qn.toRotationMatrix();
+
     double lat = pos()(0);
-    double h = pos()(2);
-    
+    double h   = pos()(2);
+
     double RM, RN;
     compute_radius(lat, RM, RN);
 
@@ -115,127 +119,155 @@ void EKF16d::predict(const ImuMeasurement& imu, double dt) {
     );
 
     Eigen::Vector3d w_in_n = w_ie_n + w_en_n;
-    
-    Eigen::Vector3d g_n(0, 0, 
-        9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat) - 0.0000058 * sin(2*lat)*sin(2*lat)) 
-        - 3.086e-6 * h);
 
-    // Velocity mechanization
-    Eigen::Vector3d v_dot = C_b_n * f_b + g_n - (2.0 * w_ie_n + w_en_n).cross(vel());
+    Eigen::Vector3d g_n(
+        0, 0,
+        9.780327 * (1 + 0.0053024 * sin(lat)*sin(lat)
+                    - 0.0000058 * sin(2*lat)*sin(2*lat))
+        - 3.086e-6 * h
+    );
+
+    // Velocity
+    Eigen::Vector3d v_dot =
+        C_b_n * f_b + g_n - (2.0 * w_ie_n + w_en_n).cross(vel());
     Eigen::Vector3d v_next = vel() + v_dot * dt;
 
-    // Position mechanization
+    // Position
     pos()(0) += vel()(0) / (RM + h) * dt;
     pos()(1) += vel()(1) / ((RN + h) * cos(lat)) * dt;
     pos()(2) -= vel()(2) * dt;
     vel() = v_next;
 
-    // Attitude mechanization
+    // Attitude
     Eigen::Vector3d w_nb_b = w_b - C_b_n.transpose() * w_in_n;
     Eigen::Vector3d angle = w_nb_b * dt;
-    double angle_norm = angle.norm();
+
     Eigen::Quaterniond dq;
-    if (angle_norm > 1e-8) {
-        dq = Eigen::Quaterniond(Eigen::AngleAxisd(angle_norm, angle / angle_norm));
+    double a = angle.norm();
+    if (a > 1e-8) {
+        dq = Eigen::Quaterniond(Eigen::AngleAxisd(a, angle / a));
     } else {
-        dq = Eigen::Quaterniond(1, 0.5*angle.x(), 0.5*angle.y(), 0.5*angle.z());
-        dq.normalize();
+        dq = Eigen::Quaterniond(1, 0.5*angle.x(),
+                                   0.5*angle.y(),
+                                   0.5*angle.z());
     }
-    q_ = q_ * dq;
-    q_.normalize();
+
+    qn = qn * dq;
+    qn.normalize();
+    q_vec() = state_from_quat(qn);
 
     // Baro bias: no dynamics on nominal state (bias just persists)
 
     // --- Build F Matrix ---
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> F = Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Zero();
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> F = Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Zero();
 
     // F_rv (Pos-Vel)
-    F(IDX_POS, IDX_VEL)     = 1.0 / (RM + h);
-    F(IDX_POS+1, IDX_VEL+1) = 1.0 / ((RN + h) * cos(lat));
-    F(IDX_POS+2, IDX_VEL+2) = -1.0;
+    F(ERR_POS, ERR_VEL)     = 1.0 / (RM + h);
+    F(ERR_POS+1, ERR_VEL+1) = 1.0 / ((RN + h) * cos(lat));
+    F(ERR_POS+2, ERR_VEL+2) = -1.0;
 
     // F_vv (Vel-Vel) - Coriolis
     Eigen::Vector3d w_term = 2.0 * w_ie_n + w_en_n;
-    F.block<3,3>(IDX_VEL, IDX_VEL) = -skew(w_term);
+    F.block<3,3>(ERR_VEL, ERR_VEL) = -skew(w_term);
 
     // F_v_theta (Vel-Att)
     Eigen::Vector3d f_n = C_b_n * f_b;
-    F.block<3,3>(IDX_VEL, IDX_ATT) = -skew(f_n);
+    F.block<3,3>(ERR_VEL, ERR_ATT) = -skew(f_n);
 
     // F_v_ba (Vel-AccelBias)
-    F.block<3,3>(IDX_VEL, IDX_BA) = -C_b_n;
+    F.block<3,3>(ERR_VEL, ERR_BA) = -C_b_n;
 
     // F_theta_theta (Att-Att)
-    F.block<3,3>(IDX_ATT, IDX_ATT) = -skew(w_in_n);
+    F.block<3,3>(ERR_ATT, ERR_ATT) = -skew(w_in_n);
 
     // F_theta_bg (Att-GyroBias)
-    F.block<3,3>(IDX_ATT, IDX_BG) = -C_b_n;
+    F.block<3,3>(ERR_ATT, ERR_BG) = -C_b_n;
 
     // Gauss-Markov bias dynamics
-    F.block<3,3>(IDX_BA, IDX_BA).diagonal() = -1.0 / tau_a_.array();
-    F.block<3,3>(IDX_BG, IDX_BG).diagonal() = -1.0 / tau_g_.array();
-    F(IDX_BBARO, IDX_BBARO) = -1.0 / tau_bbaro_;
+    F.block<3,3>(ERR_BA, ERR_BA).diagonal() = -1.0 / tau_a_.array();
+    F.block<3,3>(ERR_BG, ERR_BG).diagonal() = -1.0 / tau_g_.array();
+    F(ERR_BBARO, ERR_BBARO) = -1.0 / tau_bbaro_;
 
     // --- Build G Matrix ---
-    Eigen::Matrix<double, DIM_STATE, DIM_NOISE> G = Eigen::Matrix<double, DIM_STATE, DIM_NOISE>::Zero();
-    G.block<3,3>(IDX_VEL, 0) = -C_b_n;                        // vel - accel noise
-    G.block<3,3>(IDX_ATT, 3) = -C_b_n;                        // att - gyro noise
-    G.block<3,3>(IDX_BA, 6)  = Eigen::Matrix3d::Identity();   // ba - driving noise
-    G.block<3,3>(IDX_BG, 9)  = Eigen::Matrix3d::Identity();   // bg - driving noise
-    G(IDX_BBARO, 12) = 1.0;                                   // bbaro - driving noise
+    Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>::Zero();
+    G.block<3,3>(ERR_VEL, 0) = -C_b_n;                        // vel - accel noise
+    G.block<3,3>(ERR_ATT, 3) = -C_b_n;                        // att - gyro noise
+    G.block<3,3>(ERR_BA, 6)  = Eigen::Matrix3d::Identity();   // ba - driving noise
+    G.block<3,3>(ERR_BG, 9)  = Eigen::Matrix3d::Identity();   // bg - driving noise
+    G(ERR_BBARO, 12) = 1.0;                                   // bbaro - driving noise
 
     // --- Van Loan Discretization ---
-    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> A;
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> A;
     A.setZero();
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> GQGt = G * Qc_ * G.transpose();
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> GQGt = G * Qc_ * G.transpose();
 
-    A.block<DIM_STATE, DIM_STATE>(0, 0) = -F * dt;
-    A.block<DIM_STATE, DIM_STATE>(0, DIM_STATE) = GQGt * dt;
-    A.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE) = F.transpose() * dt;
+    A.block<DIM_ERROR, DIM_ERROR>(0, 0) = -F * dt;
+    A.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR) = GQGt * dt;
+    A.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR) = F.transpose() * dt;
 
     // Taylor expansion for matrix exponential
-    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> I_vl = 
-        Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE>::Identity();
-    Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> B = I_vl + A + 0.5 * A * A; //+ (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> I_vl = 
+        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR>::Identity();
+    Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = I_vl + A + 0.5 * A * A; //+ (1.0/6.0) * A * A * A + (1.0/24.0) * A * A * A * A;
 
-    //Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> B = A.exp();
+    //Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> B = A.exp();
 
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> Phi = 
-        B.block<DIM_STATE, DIM_STATE>(DIM_STATE, DIM_STATE).transpose();
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> Qd = 
-        Phi * B.block<DIM_STATE, DIM_STATE>(0, DIM_STATE);
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi = 
+        B.block<DIM_ERROR, DIM_ERROR>(DIM_ERROR, DIM_ERROR).transpose();
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Qd = 
+        Phi * B.block<DIM_ERROR, DIM_ERROR>(0, DIM_ERROR);
 
     Qd = 0.5 * (Qd + Qd.transpose());
 
     P_ = Phi * P_ * Phi.transpose() + Qd;
 }
 
-void EKF16d::inject_error(const StateVector& dx) {
-    pos() += dx.segment<3>(IDX_POS);
-    vel() += dx.segment<3>(IDX_VEL);
-    ba()  += dx.segment<3>(IDX_BA);
-    bg()  += dx.segment<3>(IDX_BG);
-    bbaro() += dx(IDX_BBARO);
+void EKF16d::inject_error(const ErrorVector& dx) {
 
-    // Attitude correction
-    Eigen::Vector3d dtheta = dx.segment<3>(IDX_ATT);
-    double theta_norm = dtheta.norm();
+    // Additive states
+    x_.segment<3>(NOM_POS) += dx.segment<3>(ERR_POS);
+    x_.segment<3>(NOM_VEL) += dx.segment<3>(ERR_VEL);
+    x_.segment<3>(NOM_BA)  += dx.segment<3>(ERR_BA);
+    x_.segment<3>(NOM_BG)  += dx.segment<3>(ERR_BG);
+    x_(NOM_BBARO)          += dx(ERR_BBARO);
+
+    // Attitude (multiplicative)
+    Eigen::Vector3d dtheta = dx.segment<3>(ERR_ATT);
+    double a = dtheta.norm();
+
     Eigen::Quaterniond dq;
-    if (theta_norm > 1e-8) {
-        dq = Eigen::Quaterniond(Eigen::AngleAxisd(theta_norm, dtheta / theta_norm));
+    if (a > 1e-8) {
+        dq = Eigen::Quaterniond(Eigen::AngleAxisd(a, dtheta / a));
     } else {
-        dq = Eigen::Quaterniond(1, 0.5*dtheta.x(), 0.5*dtheta.y(), 0.5*dtheta.z());
+        dq = Eigen::Quaterniond(
+            1,
+            0.5*dtheta.x(),
+            0.5*dtheta.y(),
+            0.5*dtheta.z()
+        );
     }
-    q_ = dq * q_;
-    q_.normalize();
+
+    Eigen::Quaterniond qn(
+        x_(NOM_QUAT + 0),
+        x_(NOM_QUAT + 1),
+        x_(NOM_QUAT + 2),
+        x_(NOM_QUAT + 3)
+    );
+
+    qn = dq * qn;
+    qn.normalize();
+
+    x_.segment<4>(NOM_QUAT) <<
+        qn.w(), qn.x(), qn.y(), qn.z();
 }
+
 
 void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = pos_gnss - pos();
     
-    Eigen::Matrix<double, 3, DIM_STATE> H;
+    Eigen::Matrix<double, 3, DIM_ERROR> H;
     H.setZero();
-    H.block<3,3>(0, IDX_POS) = Eigen::Matrix3d::Identity();
+    H.block<3,3>(0, ERR_POS) = Eigen::Matrix3d::Identity();
 
     update_internal<3>(innovation, H, R);
 }
@@ -243,9 +275,9 @@ void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::
 void EKF16d::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
     Eigen::Vector3d innovation = vel_gnss - vel();
 
-    Eigen::Matrix<double, 3, DIM_STATE> H;
+    Eigen::Matrix<double, 3, DIM_ERROR> H;
     H.setZero();
-    H.block<3,3>(0, IDX_VEL) = Eigen::Matrix3d::Identity();
+    H.block<3,3>(0, ERR_VEL) = Eigen::Matrix3d::Identity();
 
     update_internal<3>(innovation, H, R);
 }
@@ -255,10 +287,10 @@ void EKF16d::update_barometer(double altitude, double R_var) {
 
     // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
     //      pos      vel     att     ba      bg    bbaro
-    Eigen::Matrix<double, 1, DIM_STATE> H;
+    Eigen::Matrix<double, 1, DIM_ERROR> H;
     H.setZero();
-    H(0, IDX_POS + 2) = 1.0;   // dh
-    H(0, IDX_BBARO) = 1.0;     // dbbaro
+    H(0, ERR_POS + 2) = 1.0;   // dh
+    H(0, ERR_BBARO) = 1.0;     // dbbaro
 
     Eigen::Matrix<double, 1, 1> R_mat;
     R_mat(0,0) = R_var;
@@ -275,7 +307,7 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     // apparently the magnetic field vector in southend on sea
     static const Eigen::Vector3d m_n(0.40, 0.0, 0.92);
     
-    Eigen::Matrix3d C_b_n = q_.toRotationMatrix();
+    Eigen::Matrix3d C_b_n = quat_from_state(q_vec()).toRotationMatrix();
     Eigen::Matrix3d C_n_b = C_b_n.transpose();
     
     // Predicted measurement
@@ -285,9 +317,9 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     Eigen::Vector3d innovation = mag_body.normalized() - mag_pred;
     
     // H matrix: d(mag_pred)/d(theta) = -C_n_b * skew(m_n)
-    Eigen::Matrix<double, 3, DIM_STATE> H;
+    Eigen::Matrix<double, 3, DIM_ERROR> H;
     H.setZero();
-    H.block<3,3>(0, IDX_ATT) = C_n_b * skew(m_n);
+    H.block<3,3>(0, ERR_ATT) = C_n_b * skew(m_n);
     
     update_internal<3>(innovation, H, R);
 }

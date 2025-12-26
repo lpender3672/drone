@@ -13,7 +13,7 @@
 // [Source: 51] Error State Dimension: 15
 // [Source: 184] Noise Dimension: 12
 const int DIM_NOMINAL = 16;
-const int DIM_STATE = 16;
+const int DIM_ERROR = 16;
 const int DIM_NOISE = 13;
 
 // Indices for Error State Vector [Source: 44]
@@ -59,7 +59,7 @@ public:
                     const Eigen::Vector3d& init_ba,
                     const Eigen::Vector3d& init_bg,
                     double init_bbaro,
-                    const Eigen::Matrix<double, DIM_STATE, DIM_STATE>& init_P);
+                    const Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>& init_P);
 
     // Prediction Step [Source: 282]
     void predict(const ImuMeasurement& imu, double dt);
@@ -73,7 +73,7 @@ public:
 
     // Getters
     NominalState getState() const { return x_; }
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> getCovariance() const { return P_; }
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> getCovariance() const { return P_; }
     EkfStatus getStatus(double max_variance_threshold) const;
 
     void (*debugCallback)(const char* label) = nullptr;
@@ -81,7 +81,7 @@ public:
 private:
     // State and Covariance
     NominalState x_;
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> P_;
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P_;
 
     // Process Noise Spectral Density [Source: 190]
     Eigen::Matrix<double, DIM_NOISE, DIM_NOISE> Qc_;
@@ -100,34 +100,34 @@ private:
     struct EkfScratch {
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
         // Van Loan discretization (32x32 = 8KB each)
-        Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> vl_A;
-        Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> vl_B;
-        Eigen::Matrix<double, 2*DIM_STATE, 2*DIM_STATE> vl_A2;  // A*A term
+        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> vl_A;
+        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> vl_B;
+        Eigen::Matrix<double, 2*DIM_ERROR, 2*DIM_ERROR> vl_A2;  // A*A term
         
         // Predict matrices (16x16 = 2KB each, 16x13 = 1.6KB)
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> F;
-        Eigen::Matrix<double, DIM_STATE, DIM_NOISE> G;
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> GQGt;
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> Phi;
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> Qd;
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> Phi_P;  // Phi * P intermediate
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> F;
+        Eigen::Matrix<double, DIM_ERROR, DIM_NOISE> G;
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> GQGt;
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi;
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Qd;
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> Phi_P;  // Phi * P intermediate
         
         // Update matrices - sized for largest update (3 measurements)
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> I_KH;
-        Eigen::Matrix<double, DIM_STATE, 1> dx;
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> I_KH;
+        Eigen::Matrix<double, DIM_ERROR, 1> dx;
         
         // 3-measurement update (GNSS pos/vel, magnetometer)
         Eigen::Matrix<double, 3, 3> S3;
-        Eigen::Matrix<double, DIM_STATE, 3> K3;
-        Eigen::Matrix<double, DIM_STATE, 3> PH3t;
-        Eigen::Matrix<double, 3, DIM_STATE> H3;
+        Eigen::Matrix<double, DIM_ERROR, 3> K3;
+        Eigen::Matrix<double, DIM_ERROR, 3> PH3t;
+        Eigen::Matrix<double, 3, DIM_ERROR> H3;
         Eigen::Vector3d z3;
         Eigen::Matrix<double, 3, 3> R3;
         
         // 1-measurement update (barometer)
-        Eigen::Matrix<double, DIM_STATE, 1> K1;
-        Eigen::Matrix<double, DIM_STATE, 1> PH1t;
-        Eigen::Matrix<double, 1, DIM_STATE> H1;
+        Eigen::Matrix<double, DIM_ERROR, 1> K1;
+        Eigen::Matrix<double, DIM_ERROR, 1> PH1t;
+        Eigen::Matrix<double, 1, DIM_ERROR> H1;
         
         // Scratch vectors
         Eigen::Vector3d v3_a, v3_b, v3_c;
@@ -141,9 +141,9 @@ private:
     template<int M>
     void update_internal(
         const Eigen::Matrix<double, M, 1>& z,
-        const Eigen::Matrix<double, M, DIM_STATE>& H,
+        const Eigen::Matrix<double, M, DIM_ERROR>& H,
         const Eigen::Matrix<double, M, M>& R);
-    void inject_error(const Eigen::Matrix<double, DIM_STATE, 1>& dx);
+    void inject_error(const Eigen::Matrix<double, DIM_ERROR, 1>& dx);
 
 };
 

@@ -6,9 +6,10 @@
 class Ekf16Tests : public ::testing::Test {
 protected:
     EKF16d ekf;
-    Eigen::Vector3d p0, v0, ba0, bg0, a0;
+    Eigen::Vector3d p0, v0, ba0, bg0;
     double bb0;
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
+    Eigen::Quaterniond q0;
+    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
     
     // Constants for checking results
     const double g_approx = 9.80665;
@@ -17,12 +18,12 @@ protected:
         // [cite: 40] Initialize Nominal State
         p0 = Eigen::Vector3d::Zero(); // Lat/Lon/Alt
         v0 = Eigen::Vector3d::Zero();
-        a0 = Eigen::Vector3d::Zero();
+        q0 = Eigen::Quaterniond::Identity();
         ba0 = Eigen::Vector3d::Zero();
         bg0 = Eigen::Vector3d::Zero();
         bb0 = 0.0;
         
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
+        EKF16d::CovMatrix P0;
         P0.setIdentity();
         P0.block<3,3>(0,0) *= 1e-6;
         P0.block<3,3>(3,3) *= 0.1;
@@ -31,8 +32,8 @@ protected:
         P0.block<3,3>(12,12) *= 0.001;
         P0(15,15) *= 0.001;
 
-        Eigen::Matrix<double, DIM_STATE, 1> x0;
-        x0 << p0, v0, a0, ba0, bg0, bb0;
+        EKF16d::NominalVector x0;
+        x0 << p0, v0, q0.coeffs(), ba0, bg0, bb0;
         ekf.initialize(x0, P0);
     }
 public:
@@ -47,8 +48,8 @@ TEST_F(Ekf16Tests, InitializationCorrect) {
     EXPECT_TRUE(ekf.pos().isApprox(p0));
     EXPECT_TRUE(ekf.vel().isApprox(v0));
     // [cite: 336] Quaternion convention check (scalar-last is Eigen default, but we check values)
-    EXPECT_DOUBLE_EQ(ekf.q().w(), 1.0); 
-    EXPECT_DOUBLE_EQ(ekf.q().x(), 0.0);
+    EXPECT_DOUBLE_EQ(ekf.q_vec().w(), 1.0); 
+    EXPECT_DOUBLE_EQ(ekf.q_vec().x(), 0.0);
     
     // Check Covariance
     EXPECT_TRUE(ekf.getCovariance().isApprox(P0));
@@ -74,7 +75,7 @@ TEST_F(Ekf16Tests, StationaryHold) {
     EXPECT_NEAR(ekf.vel().norm(), 0.0, 0.2); 
     
     // [cite: 327] Quaternion must remain normalized
-    EXPECT_NEAR(ekf.q().norm(), 1.0, 1e-8);
+    EXPECT_NEAR(ekf.q_vec().norm(), 1.0, 1e-8);
 }
 
 // 3. Integration Test (Constant Acceleration)
@@ -166,7 +167,7 @@ TEST_F(Ekf16Tests, QuaternionNormalizationAfterUpdate) {
     
     ekf.update_gnss_velocity(gnss_vel, R);
     
-    EXPECT_NEAR(ekf.q().norm(), 1.0, 1e-15);
+    EXPECT_NEAR(ekf.q_vec().norm(), 1.0, 1e-15);
 }
 
 // 7. Van Loan Discretization Logic Check

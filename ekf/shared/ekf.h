@@ -34,21 +34,22 @@ struct EkfErrorParameters {
     double baro_altitude_n, baro_altitude_b, baro_altitude_tp;
 };
 
-template<int DIM_STATE, int DIM_NOISE>
+template<int DIM_NOMINAL, int DIM_ERROR, int DIM_NOISE>
 class EKF {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     // Type aliases
-    using StateVector = Eigen::Matrix<double, DIM_STATE, 1>;
-    using CovMatrix = Eigen::Matrix<double, DIM_STATE, DIM_STATE>;
+    using NominalVector = Eigen::Matrix<double, DIM_NOMINAL, 1>;
+    using ErrorVector = Eigen::Matrix<double, DIM_ERROR, 1>;
+    using CovMatrix = Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>;
     using NoiseMatrix = Eigen::Matrix<double, DIM_NOISE, DIM_NOISE>;
-    using ProcessNoiseMap = Eigen::Matrix<double, DIM_STATE, DIM_NOISE>;
+    using ProcessNoiseMap = Eigen::Matrix<double, DIM_ERROR, DIM_NOISE>;
 
     template<int M>
     using MeasVector = Eigen::Matrix<double, M, 1>;
     template<int M>
-    using MeasMatrix = Eigen::Matrix<double, M, DIM_STATE>;
+    using MeasMatrix = Eigen::Matrix<double, M, DIM_ERROR>;
     template<int M>
     using MeasCov = Eigen::Matrix<double, M, M>;
 
@@ -57,12 +58,12 @@ public:
     explicit EKF(const EkfErrorParameters& p)
     { }
 
-    void initialize(const StateVector& x0, const CovMatrix& P0) {
+    void initialize(const NominalVector& x0, const CovMatrix& P0) {
         x_ = x0;
         P_ = P0;
     }
     
-    StateVector getState() { return x_; }
+    NominalVector getState() { return x_; }
     CovMatrix getCovariance() {return P_; }
 
     EkfStatus getStatus(double max_variance_threshold) const
@@ -78,7 +79,7 @@ public:
 
         constexpr double SYM_TOL = 1e-10;
 
-        for (int i = 0; i < DIM_STATE; i++) {
+        for (int i = 0; i < DIM_ERROR; i++) {
             double diag = P_(i, i);
             
             // Check diagonal positive
@@ -100,7 +101,7 @@ public:
             
             // Gershgorin: sum of absolute off-diagonal elements
             double off_diag_sum = 0.0;
-            for (int j = 0; j < DIM_STATE; j++) {
+            for (int j = 0; j < DIM_ERROR; j++) {
                 if (i == j) continue;  
                 off_diag_sum += std::abs(P_(i, j));
             
@@ -125,7 +126,7 @@ public:
     }
 
 protected:
-    StateVector x_;
+    NominalVector x_;
     CovMatrix P_;
     NoiseMatrix Qc_;
 
@@ -138,14 +139,14 @@ protected:
         Eigen::Matrix<double, M, M> S =
             H * P_ * H.transpose() + R;
 
-        Eigen::Matrix<double, DIM_STATE, M> K =
+        Eigen::Matrix<double, DIM_ERROR, M> K =
             P_ * H.transpose() * S.inverse();
 
-        StateVector dx = K * z;
+        ErrorVector dx = K * z;
 
         // Joseph form
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE> I_KH =
-            Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Identity()
+        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> I_KH =
+            Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Identity()
             - K * H;
 
         P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
@@ -154,7 +155,7 @@ protected:
         inject_error(dx);
     }
 
-    virtual void inject_error(const StateVector& dx)
+    virtual void inject_error(const ErrorVector& dx)
     { }
 
     Eigen::Matrix3d skew(const Eigen::Vector3d& v) {
