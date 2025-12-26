@@ -2,14 +2,14 @@
 #define SENSOR_BARO_H
 
 #include "sensor_base.h"
-#include <ekf16d_opt.h>
+#include <ekf.h>
 
 // Placeholder - replace with your barometer library
 // e.g., #include <Adafruit_BMP280.h>
 
 class BaroSensor : public SensorBase {
 private:
-    EKF16d_OPT* ekf_;
+    IEKF* ekf_;
     double baro_std_ = 1.0;  // meters
     double alt_ref_ = 0.0;
     bool ref_set_ = false;
@@ -18,7 +18,7 @@ private:
     // Adafruit_BMP280 bmp_;
 
 public:
-    BaroSensor(EKF16d_OPT* ekf, uint32_t interval_ms = 50)
+    BaroSensor(IEKF* ekf, uint32_t interval_ms = 50)
         : SensorBase("Baro", interval_ms), ekf_(ekf) {}
 
     bool initialize() override {

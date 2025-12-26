@@ -3,7 +3,7 @@
 
 #include "sensor_base.h"
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
-#include <ekf16d_opt.h>
+#include <ekf.h>
 
 #ifndef DEG_TO_RAD
 constexpr double DEG_TO_RAD = M_PI / 180.0;
@@ -12,7 +12,7 @@ constexpr double DEG_TO_RAD = M_PI / 180.0;
 class GnssSensor : public SensorBase {
 private:
     SFE_UBLOX_GNSS gnss_;
-    EKF16d_OPT* ekf_;
+    IEKF* ekf_;
     
     // Reference position for local frame
     double lat_ref_ = 0.0, lon_ref_ = 0.0, alt_ref_ = 0.0;
@@ -23,8 +23,8 @@ private:
     double vel_std_ = 0.1;  // m/s
 
 public:
-    GnssSensor(EKF16d_OPT* ekf, uint32_t interval_ms = 100)
-        : SensorBase("GNSS", interval_ms), ekf_(ekf) {}
+    GnssSensor(IEKF* ekf, uint32_t interval_ms = 100)
+        : SensorBase("GNSS", interval_ms) {}
 
     bool initialize() override {
         if (!gnss_.begin()) {

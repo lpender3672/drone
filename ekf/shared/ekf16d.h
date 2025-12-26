@@ -38,14 +38,13 @@ public:
     explicit EKF16d(const EkfErrorParameters& p);
 
     // Prediction Step [Source: 282]
-    void predict(const ImuMeasurement& imu, double dt);
+    void predict(const ImuMeasurement& imu, double dt) override;
 
     // Measurement Updates [Source: 236]
-    void update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R);
-    void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R);
-    // [Source: 260] Barometric altitude update
-    void update_barometer(double altitude, double R_var);
-    void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R);
+    void update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) override;
+    void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) override;
+    void update_barometer(double altitude, double R_var) override;
+    void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R) override;
 
     void (*debugCallback)(const char* label) = nullptr;
 

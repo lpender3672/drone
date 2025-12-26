@@ -3,16 +3,16 @@
 
 #include "sensor_base.h"
 #include <Adafruit_BNO055.h>
-#include <ekf16d_opt.h>
+#include <ekf.h>
 
 class MagSensor : public SensorBase {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
-    EKF16d_OPT* ekf_;
+    IEKF* ekf_;
     double mag_std_ = 0.5;  // uT
 
 public:
-    MagSensor(Adafruit_BNO055* bno, EKF16d_OPT* ekf, uint32_t interval_ms = 20)
+    MagSensor(Adafruit_BNO055* bno, IEKF* ekf, uint32_t interval_ms = 20)
         : SensorBase("Mag", interval_ms), bno_(bno), ekf_(ekf) {}
 
     bool initialize() override {

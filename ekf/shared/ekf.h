@@ -34,8 +34,20 @@ struct EkfErrorParameters {
     double baro_altitude_n, baro_altitude_b, baro_altitude_tp;
 };
 
+class IEKF {
+public:
+    virtual ~IEKF() = default;
+
+    virtual void update_magnetometer(const Eigen::Vector3d&, const Eigen::Matrix3d&) = 0;
+    virtual void update_gnss_position(const Eigen::Vector3d&, const Eigen::Matrix3d&) = 0;
+    virtual void update_gnss_velocity(const Eigen::Vector3d&, const Eigen::Matrix3d&) = 0;
+    virtual void update_barometer(const double, const double) = 0;
+
+    virtual void predict(const ImuMeasurement&, double) = 0;
+};
+
 template<int DIM_NOMINAL, int DIM_ERROR, int DIM_NOISE>
-class EKF {
+class EKF : public IEKF {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 

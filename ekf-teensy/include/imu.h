@@ -4,16 +4,16 @@
 
 #include "sensor_base.h"
 #include <Adafruit_BNO055.h>
-#include <ekf16d_opt.h>
+#include <ekf16d.h>
 
 class ImuSensor : public SensorBase {
 private:
     Adafruit_BNO055 bno_;
-    EKF16d_OPT* ekf_;
+    IEKF* ekf_;
     static constexpr double G_ACCEL = 9.80665;
 
 public:
-    ImuSensor(EKF16d_OPT* ekf, uint32_t interval_ms = 10)
+    ImuSensor(IEKF* ekf, uint32_t interval_ms = 10)
         : SensorBase("IMU", interval_ms), bno_(55, 0x28), ekf_(ekf) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
@@ -44,7 +44,6 @@ public:
 
         if (dt > 0.0f && dt < 0.1f) {
             ImuMeasurement msg;
-            msg.t = now * 0.001;
             msg.acc = Eigen::Vector3d(accel.acceleration.x, 
                                        accel.acceleration.y, 
                                        accel.acceleration.z) / G_ACCEL;

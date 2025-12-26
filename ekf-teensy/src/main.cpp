@@ -1,5 +1,5 @@
 #include <Eigen/Dense>
-#include <ekf16d_opt.h>
+#include <ekf16d.h>
 
 #include <Arduino.h>
 #include "sensor_base.h"
@@ -7,6 +7,8 @@
 #include "gnss.h"
 #include "mag.h"
 #include "baro.h"
+
+#include "tuned_ekf_params.h"
 
 #define EIGEN_NO_MALLOC
 #define EIGEN_NO_DEBUG
@@ -20,7 +22,7 @@ extern char *__brkval;
 int freeram() { return (char *)&_heap_end - __brkval; }
 
 // EKF instance
-EKF16d_OPT ekf;
+EKF16d ekf(DEFAULT_PARAMS);
 
 // Sensor instances
 ImuSensor*  imuSensor;
@@ -80,17 +82,11 @@ void printStates() {
   static uint32_t last_print = 0;
   if (millis() - last_print < 1000) return;
   last_print = millis();
-
-  NominalState state = ekf.getState();
   
   Serial.println("EKF States:");
-  Serial.printf("Position:  %.6f, %.6f, %.3f\n", state.p(0), state.p(1), state.p(2));
-  Serial.printf("Velocity:  %.3f, %.3f, %.3f\n", state.v(0), state.v(1), state.v(2));
+  Serial.printf("Position:  %.6f, %.6f, %.3f\n", ekf.pos().x(), ekf.pos().y(), ekf.pos().z());
+  Serial.printf("Velocity:  %.3f, %.3f, %.3f\n", ekf.vel().x(), ekf.vel().y(), ekf.vel().z());
   
-  Eigen::Vector3d euler_deg = quat_to_euler(state.q) / DEG_TO_RAD;
-  Serial.printf("Attitude:  Roll: %.2f, Pitch: %.2f, Yaw: %.2f\n", 
-                euler_deg(0), euler_deg(1), euler_deg(2));
-
 }
 
 void setup() {
@@ -102,13 +98,8 @@ void setup() {
 
     Serial.println("Initializing EKF...");
     ekf.initialize(
-        Eigen::Vector3d::Zero(),           // position
-        Eigen::Vector3d::Zero(),           // velocity
-        Eigen::Quaterniond::Identity(),    // attitude
-        Eigen::Vector3d::Zero(),           // gyro bias
-        Eigen::Vector3d::Zero(),           // accel bias
-        0.0,                               // baro bias
-        Eigen::Matrix<double, DIM_ERROR, DIM_ERROR>::Identity() * 0.1
+        EKF16d::NominalVector::Zero(),
+        EKF16d::CovMatrix::Identity() * 0.1
     );
     ekf.debugCallback = ekfDebug;
 
