@@ -46,6 +46,46 @@ public:
     virtual void predict(const ImuMeasurement&, double) = 0;
 };
 
+class BufferReserver {
+    double* base_;
+    int capacity_;
+    int offset_ = 0;
+public:
+    BufferReserver(double* buf, int capacity) : base_(buf), capacity_(capacity) {}
+    
+    template<int Rows, int Cols>
+    Eigen::Map<Eigen::Matrix<double, Rows, Cols>> matrix() {
+        static_assert(Rows > 0 && Cols > 0, "Dynamic size not supported");
+        int size = Rows * Cols;
+
+        if (offset_ + size > capacity_)
+        {
+            while (true); // Buffer overflow
+        }
+
+        auto map = Eigen::Map<Eigen::Matrix<double, Rows, Cols>>(base_ + offset_);
+        offset_ += size;
+        return map;
+    }
+
+    template<int Size>
+    Eigen::Map<Eigen::Matrix<double, Size, 1>> vector() {
+        static_assert(Size > 0, "Dynamic size not supported");
+        if (offset_ + Size > capacity_)
+        {
+            while (true); // Buffer overflow
+        }
+
+        auto map = Eigen::Map<Eigen::Matrix<double, Size, 1>>(base_ + offset_);
+        offset_ += Size;
+        return map;
+    }
+    
+    void reset() { offset_ = 0; }
+    int used() const { return offset_; }
+    int remaining() const { return capacity_ - offset_; }
+};
+
 template<int DIM_NOMINAL, int DIM_ERROR, int DIM_NOISE>
 class EKF : public IEKF {
 public:
@@ -141,6 +181,10 @@ protected:
     NominalVector x_;
     CovMatrix P_;
     NoiseMatrix Qc_;
+
+    static constexpr int SCRATCH_SIZE = 10 * DIM_ERROR * DIM_ERROR;
+    alignas(32) double scratch_[SCRATCH_SIZE];
+    BufferReserver reserver_{scratch_, SCRATCH_SIZE};
 
     template<int M>
     void update_internal(
