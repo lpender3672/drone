@@ -54,16 +54,75 @@ public:
 
     void (*debugCallback)(const char* label) = nullptr;
 
-    explicit EKF(const EkfErrorParameters& p);
+    explicit EKF(const EkfErrorParameters& p)
+    { }
 
     void initialize(const StateVector& x0, const CovMatrix& P0) {
         x_ = x0;
         P_ = P0;
     }
     
-    EkfStatus getStatus(double max_variance_threshold) const;
     StateVector getState() { return x_; }
     CovMatrix getCovariance() {return P_; }
+
+    EkfStatus getStatus(double max_variance_threshold) const
+    {
+        EkfStatus status;
+        status.positive_definite_guaranteed = true;
+        status.symmetry_ok = true;
+        status.diagonal_positive = true;
+        status.variances_bounded = true;
+        status.min_gershgorin_lower = std::numeric_limits<double>::max();
+        status.max_variance = 0.0;
+        status.suspect_state = -1;
+
+        constexpr double SYM_TOL = 1e-10;
+
+        for (int i = 0; i < DIM_STATE; i++) {
+            double diag = P_(i, i);
+            
+            // Check diagonal positive
+            if (diag <= 0) {
+                status.diagonal_positive = false;
+                status.suspect_state = i;
+            }
+            
+            // Track max variance
+            if (diag > status.max_variance) {
+                status.max_variance = diag;
+            }
+            
+            // Check bounded
+            if (diag > max_variance_threshold) {
+                status.variances_bounded = false;
+                if (status.suspect_state < 0) status.suspect_state = i;
+            }
+            
+            // Gershgorin: sum of absolute off-diagonal elements
+            double off_diag_sum = 0.0;
+            for (int j = 0; j < DIM_STATE; j++) {
+                if (i == j) continue;  
+                off_diag_sum += std::abs(P_(i, j));
+            
+                // Symmetry check
+                if (std::abs(P_(i, j) - P_(j, i)) > SYM_TOL) {
+                    status.symmetry_ok = false;
+                }
+            }
+            
+            // Lower bound on eigenvalue from this disc
+            double lower_bound = diag - off_diag_sum;
+            if (lower_bound < status.min_gershgorin_lower) {
+                status.min_gershgorin_lower = lower_bound;
+            }
+            
+            if (lower_bound <= 0) {
+                status.positive_definite_guaranteed = false;
+            }
+        }
+        
+        return status;
+    }
 
 protected:
     StateVector x_;
@@ -82,7 +141,7 @@ protected:
         Eigen::Matrix<double, DIM_STATE, M> K =
             P_ * H.transpose() * S.inverse();
 
-        Eigen::Matrix<double, DIM_STATE, 1> dx = K * z;
+        StateVector dx = K * z;
 
         // Joseph form
         Eigen::Matrix<double, DIM_STATE, DIM_STATE> I_KH =
@@ -95,7 +154,8 @@ protected:
         inject_error(dx);
     }
 
-    virtual void inject_error(const Eigen::Matrix<double, DIM_STATE, 1>& dx);
+    virtual void inject_error(const StateVector& dx)
+    { }
 
     Eigen::Matrix3d skew(const Eigen::Vector3d& v) {
         Eigen::Matrix3d m;

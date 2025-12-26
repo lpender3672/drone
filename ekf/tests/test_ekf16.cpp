@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 #include "ekf16d.h" 
+#include "tuned_ekf_params.h"
 
 // Test Fixture for initializing common state
 class Ekf16Tests : public ::testing::Test {
 protected:
     EKF16d ekf;
-    Eigen::Vector3d p0, v0, ba0, bg0;
+    Eigen::Vector3d p0, v0, ba0, bg0, a0;
     double bb0;
-    Eigen::Quaterniond q0;
     Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
     
     // Constants for checking results
@@ -17,29 +17,38 @@ protected:
         // [cite: 40] Initialize Nominal State
         p0 = Eigen::Vector3d::Zero(); // Lat/Lon/Alt
         v0 = Eigen::Vector3d::Zero();
-        q0 = Eigen::Quaterniond::Identity();
+        a0 = Eigen::Vector3d::Zero();
         ba0 = Eigen::Vector3d::Zero();
         bg0 = Eigen::Vector3d::Zero();
         bb0 = 0.0;
         
-        // [cite: 279] Initialize Covariance
+        Eigen::Matrix<double, DIM_STATE, DIM_STATE> P0;
         P0.setIdentity();
-        P0.block<3,3>(0,0) *= 1.0;  // Position uncert
-        P0.block<3,3>(3,3) *= 0.1;  // Velocity uncert
-        
-        ekf.initialize(p0, v0, q0, ba0, bg0, bb0, P0);
+        P0.block<3,3>(0,0) *= 1e-6;
+        P0.block<3,3>(3,3) *= 0.1;
+        P0.block<3,3>(6,6) *= 0.01;
+        P0.block<3,3>(9,9) *= 0.01;
+        P0.block<3,3>(12,12) *= 0.001;
+        P0(15,15) *= 0.001;
+
+        Eigen::Matrix<double, DIM_STATE, 1> x0;
+        x0 << p0, v0, a0, ba0, bg0, bb0;
+        ekf.initialize(x0, P0);
+    }
+public:
+    Ekf16Tests() : ekf(DEFAULT_PARAMS)
+    {
     }
 };
 
 // 1. Initialization Test
 TEST_F(Ekf16Tests, InitializationCorrect) {
-    NominalState state = ekf.getState();
     
-    EXPECT_TRUE(state.p.isApprox(p0));
-    EXPECT_TRUE(state.v.isApprox(v0));
+    EXPECT_TRUE(ekf.pos().isApprox(p0));
+    EXPECT_TRUE(ekf.vel().isApprox(v0));
     // [cite: 336] Quaternion convention check (scalar-last is Eigen default, but we check values)
-    EXPECT_DOUBLE_EQ(state.q.w(), 1.0); 
-    EXPECT_DOUBLE_EQ(state.q.x(), 0.0);
+    EXPECT_DOUBLE_EQ(ekf.q().w(), 1.0); 
+    EXPECT_DOUBLE_EQ(ekf.q().x(), 0.0);
     
     // Check Covariance
     EXPECT_TRUE(ekf.getCovariance().isApprox(P0));
@@ -49,7 +58,6 @@ TEST_F(Ekf16Tests, InitializationCorrect) {
 // Checks if the filter maintains effectively zero velocity when proper gravity compensation is applied.
 TEST_F(Ekf16Tests, StationaryHold) {
     ImuMeasurement imu;
-    imu.t = 0.0;
     // Specific force in body frame when stationary = -Gravity (pointing UP)
     //  Mechanization: v_dot = C*f + g ...
     // To stay stationary, C*f should roughly equal -g
@@ -61,14 +69,12 @@ TEST_F(Ekf16Tests, StationaryHold) {
     for(int i = 0; i < 100; ++i) {
         ekf.predict(imu, dt);
     }
-
-    NominalState state = ekf.getState();
     
     // Velocity should remain very close to 0
-    EXPECT_NEAR(state.v.norm(), 0.0, 0.2); 
+    EXPECT_NEAR(ekf.vel().norm(), 0.0, 0.2); 
     
     // [cite: 327] Quaternion must remain normalized
-    EXPECT_NEAR(state.q.norm(), 1.0, 1e-8);
+    EXPECT_NEAR(ekf.q().norm(), 1.0, 1e-8);
 }
 
 // 3. Integration Test (Constant Acceleration)
@@ -91,10 +97,8 @@ TEST_F(Ekf16Tests, ForwardAcceleration) {
         ekf.predict(imu, dt);
     }
 
-    NominalState state = ekf.getState();
-
     // v = a * t = 1.0 * 1.0 = 1.0 m/s
-    EXPECT_NEAR(state.v.x(), 1.0, 0.1); 
+    EXPECT_NEAR(ekf.vel().x(), 1.0, 0.1); 
     
     // p = 0.5 * a * t^2 = 0.5 * 1.0 * 1.0 = 0.5 m
     // Note: p.x is Latitude in radians in this implementation (from PDF def), 
@@ -104,8 +108,8 @@ TEST_F(Ekf16Tests, ForwardAcceleration) {
     // So p.x won't be 0.5, it will be tiny (radians).
     
     // Let's verify velocity mostly, as position depends on Earth radii calc.
-    EXPECT_GT(state.v.x(), 0.9);
-    EXPECT_LT(state.v.x(), 1.1);
+    EXPECT_GT(ekf.vel().x(), 0.9);
+    EXPECT_LT(ekf.vel().x(), 1.1);
 }
 
 // 4. Covariance Growth Test
@@ -142,13 +146,12 @@ TEST_F(Ekf16Tests, GnssPositionCorrection) {
     
     ekf.update_gnss_position(gnss_pos, R);
     
-    NominalState state = ekf.getState();
     Eigen::MatrixXd P_updated = ekf.getCovariance();
 
     // State should move towards measurement
     // INS was 0, GNSS is 10. New state should be > 0.
-    EXPECT_GT(state.p.z(), 0.0);
-    EXPECT_LT(state.p.z(), 10.1); 
+    EXPECT_GT(ekf.pos().z(), 0.0);
+    EXPECT_LT(ekf.pos().z(), 10.1); 
     
     // Covariance should shrink [cite: 329]
     EXPECT_LT(P_updated(2,2), initial_z_cov);
@@ -163,8 +166,7 @@ TEST_F(Ekf16Tests, QuaternionNormalizationAfterUpdate) {
     
     ekf.update_gnss_velocity(gnss_vel, R);
     
-    NominalState state = ekf.getState();
-    EXPECT_NEAR(state.q.norm(), 1.0, 1e-15);
+    EXPECT_NEAR(ekf.q().norm(), 1.0, 1e-15);
 }
 
 // 7. Van Loan Discretization Logic Check

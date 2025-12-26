@@ -84,14 +84,8 @@ private:
     double tau_bbaro_;               // Baro bias correlation time [s]
 
     // Helpers
-    Eigen::Matrix3d skew(const Eigen::Vector3d& v);
     void compute_radius(double lat, double& RM, double& RN);
-    
-    template<int M>
-    void update_internal(
-        const Eigen::Matrix<double, M, 1>& z,
-        const Eigen::Matrix<double, M, DIM_STATE>& H,
-        const Eigen::Matrix<double, M, M>& R);
+
     void inject_error(const Eigen::Matrix<double, DIM_STATE, 1>& dx);
 };
 

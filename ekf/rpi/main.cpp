@@ -281,7 +281,7 @@ int main(int argc, char* argv[]) {
         ins_data.timestamp = t;
         ins_data.position_lla = state.segment<3>(IDX_POS);
         ins_data.velocity = state.segment<3>(IDX_VEL);
-        ins_data.attitude = state.segment<4>(IDX_ATT);
+        ins_data.attitude = ekf.q();
         ins_data.accel_bias = state.segment<3>(IDX_BA);
         ins_data.gyro_bias = state.segment<3>(IDX_BG);
         ins_data.baro_bias = state[IDX_BBARO];

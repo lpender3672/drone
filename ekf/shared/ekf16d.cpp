@@ -230,33 +230,8 @@ void EKF16d::inject_error(const StateVector& dx) {
     q_.normalize();
 }
 
-template<int M>
-void EKF16d::update_internal(
-    const Eigen::Matrix<double, M, 1>& z,
-    const Eigen::Matrix<double, M, DIM_STATE>& H,
-    const Eigen::Matrix<double, M, M>& R)
-{
-    Eigen::Matrix<double, M, M> S =
-        H * P_ * H.transpose() + R;
-
-    Eigen::Matrix<double, DIM_STATE, M> K =
-        P_ * H.transpose() * S.inverse();
-
-    Eigen::Matrix<double, DIM_STATE, 1> dx = K * z;
-
-    // Joseph form
-    Eigen::Matrix<double, DIM_STATE, DIM_STATE> I_KH =
-        Eigen::Matrix<double, DIM_STATE, DIM_STATE>::Identity()
-        - K * H;
-
-    P_ = I_KH * P_ * I_KH.transpose() + K * R * K.transpose();
-    P_ = 0.5 * (P_ + P_.transpose());
-
-    inject_error(dx);
-}
-
 void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) {
-    Eigen::Vector3d innovation = pos_gnss - x_.p;
+    Eigen::Vector3d innovation = pos_gnss - pos();
     
     Eigen::Matrix<double, 3, DIM_STATE> H;
     H.setZero();
@@ -266,7 +241,7 @@ void EKF16d::update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::
 }
 
 void EKF16d::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) {
-    Eigen::Vector3d innovation = vel_gnss - x_.v;
+    Eigen::Vector3d innovation = vel_gnss - vel();
 
     Eigen::Matrix<double, 3, DIM_STATE> H;
     H.setZero();
@@ -276,7 +251,7 @@ void EKF16d::update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::
 }
 
 void EKF16d::update_barometer(double altitude, double R_var) {
-    double innovation = altitude - (x_.p.z() + x_.bbaro);
+    double innovation = altitude - (pos().z() + bbaro());
 
     // H = [0 0 1 | 0 0 0 | 0 0 0 | 0 0 0 | 0 0 0 | 1]
     //      pos      vel     att     ba      bg    bbaro
@@ -300,7 +275,7 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     // apparently the magnetic field vector in southend on sea
     static const Eigen::Vector3d m_n(0.40, 0.0, 0.92);
     
-    Eigen::Matrix3d C_b_n = x_.q.toRotationMatrix();
+    Eigen::Matrix3d C_b_n = q_.toRotationMatrix();
     Eigen::Matrix3d C_n_b = C_b_n.transpose();
     
     // Predicted measurement
@@ -317,60 +292,3 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     update_internal<3>(innovation, H, R);
 }
 
-EkfStatus EKF16d::getStatus(double max_variance_threshold) const {
-    EkfStatus status;
-    status.positive_definite_guaranteed = true;
-    status.symmetry_ok = true;
-    status.diagonal_positive = true;
-    status.variances_bounded = true;
-    status.min_gershgorin_lower = std::numeric_limits<double>::max();
-    status.max_variance = 0.0;
-    status.suspect_state = -1;
-
-    constexpr double SYM_TOL = 1e-10;
-
-    for (int i = 0; i < DIM_STATE; i++) {
-        double diag = P_(i, i);
-        
-        // Check diagonal positive
-        if (diag <= 0) {
-            status.diagonal_positive = false;
-            status.suspect_state = i;
-        }
-        
-        // Track max variance
-        if (diag > status.max_variance) {
-            status.max_variance = diag;
-        }
-        
-        // Check bounded
-        if (diag > max_variance_threshold) {
-            status.variances_bounded = false;
-            if (status.suspect_state < 0) status.suspect_state = i;
-        }
-        
-        // Gershgorin: sum of absolute off-diagonal elements
-        double off_diag_sum = 0.0;
-        for (int j = 0; j < DIM_STATE; j++) {
-            if (i == j) continue;  
-            off_diag_sum += std::abs(P_(i, j));
-        
-            // Symmetry check
-            if (std::abs(P_(i, j) - P_(j, i)) > SYM_TOL) {
-                status.symmetry_ok = false;
-            }
-        }
-        
-        // Lower bound on eigenvalue from this disc
-        double lower_bound = diag - off_diag_sum;
-        if (lower_bound < status.min_gershgorin_lower) {
-            status.min_gershgorin_lower = lower_bound;
-        }
-        
-        if (lower_bound <= 0) {
-            status.positive_definite_guaranteed = false;
-        }
-    }
-    
-    return status;
-}
