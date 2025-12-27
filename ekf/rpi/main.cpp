@@ -137,7 +137,7 @@ int main(int argc, char* argv[]) {
     }
 
     // --- 5. Initialize ESKF ---
-    EKF16d ekf(DEFAULT_PARAMS);
+    EKF16d ekf(SENSE_HAT_DATA_PARAMS);
     Eigen::Vector3d ba0(0,0,0), bg0(0,0,0);
 
     EKF16d::CovMatrix P0;

@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import allantools
+from pathlib import Path
 
 import ASD_to_GaussMarkovFirstOrder as ASD2GM1
 
@@ -41,97 +42,125 @@ def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev):
     return gm1
 
 
-path = 'data/sensor_data.csv'
-print(f"Loading data from {path}")
-data = pd.read_csv(path)
-sample_t = data['timestamp'].values.flatten()
-
-taus = np.logspace(-2, 2.5, 50)
-
-T_avg = np.mean(np.diff(sample_t))
-Fs = 1 / T_avg
-
-data_headers = ['gyro_x', 'gyro_y', 'gyro_z',
-                'accel_x', 'accel_y', 'accel_z']
-
-error_params = {}
-
-fig, axes = plt.subplots(2, 3, figsize=(10, 6))
-
-for idx, name in enumerate(data_headers):
-    print(f"\n{'-'*40}")
-    print(f"\nProcessing axis: {name}")
-
-    raw_axis_data = data[name].values.flatten()
+def tune_csv(path):
+    error_params = {}
     
-    # Convert accelerometer from g to m/s²
-    if name.startswith('accel'):
-        raw_axis_data = raw_axis_data * G_TO_MS2
+    print(f"Loading data from {path}")
+    try:
+        data = pd.read_csv(path)
+    except FileNotFoundError:
+        return error_params
     
-    print(f"raw_axis_data shape: {raw_axis_data.shape}")
-    tau, adev, adeverr, n = allantools.oadev(raw_axis_data, rate=Fs, data_type='freq', taus=taus)
-    gm1 = plot_allan_deviation_and_convert_gm(axes[idx//3, idx%3], tau, Fs, adev)
+    sample_t = data['timestamp'].values.flatten()
 
-    error_params[name] = {
-        'N': float(gm1.N),
-        'B': float(gm1.B),
-        'Tp': float(gm1.Tp),
+    taus = np.logspace(-2, 2.5, 50)
+
+    T_avg = np.mean(np.diff(sample_t))
+    Fs = 1 / T_avg
+
+    data_headers = ['gyro_x', 'gyro_y', 'gyro_z',
+                    'accel_x', 'accel_y', 'accel_z']
+
+    fig, axes = plt.subplots(2, 3, figsize=(10, 6))
+
+    for idx, name in enumerate(data_headers):
+        print(f"\n{'-'*40}")
+        print(f"\nProcessing axis: {name}")
+
+        raw_axis_data = data[name].values.flatten()
+        
+        # Convert accelerometer from g to m/s²
+        if name.startswith('accel'):
+            raw_axis_data = raw_axis_data * G_TO_MS2
+        
+        print(f"raw_axis_data shape: {raw_axis_data.shape}")
+        tau, adev, adeverr, n = allantools.oadev(raw_axis_data, rate=Fs, data_type='freq', taus=taus)
+        gm1 = plot_allan_deviation_and_convert_gm(axes[idx//3, idx%3], tau, Fs, adev)
+
+        error_params[name] = {
+            'N': float(gm1.N),
+            'B': float(gm1.B),
+            'Tp': float(gm1.Tp),
+        }
+        
+        if name.startswith('gyro'):
+            error_params[name]['N_unit'] = 'rad/s/rtHz'
+            error_params[name]['B_unit'] = 'rad/s'
+        elif name.startswith('accel'):
+            error_params[name]['N_unit'] = 'm/s^2/rtHz'
+            error_params[name]['B_unit'] = 'm/s^2'
+        
+        axes[idx//3, idx%3].set_title(f'Allan Deviation - {name}')
+        axes[idx//3, idx%3].set_ylabel(f'ADEV, {error_params[name]["B_unit"]}')
+
+    # Barometer analysis
+    baro_name = 'baro_altitude'
+    raw_pressure = data['pressure'].values.flatten()
+    altitude = 44330.0 * (1.0 - np.power(raw_pressure / 1013.25, 0.1903))
+
+    tau, adev, adeverr, n = allantools.oadev(altitude, rate=Fs, data_type='freq', taus=taus)
+    fig_baro, ax_baro = plt.subplots(figsize=(5, 4))
+    gm1_baro = plot_allan_deviation_and_convert_gm(ax_baro, tau, Fs, adev)
+
+    error_params[baro_name] = {
+        'N': float(gm1_baro.N),
+        'B': float(gm1_baro.B),
+        'Tp': float(gm1_baro.Tp),
+        'N_unit': 'm/rtHz',
+        'B_unit': 'm'
     }
-    
-    if name.startswith('gyro'):
-        error_params[name]['N_unit'] = 'rad/s/rtHz'
-        error_params[name]['B_unit'] = 'rad/s'
-    elif name.startswith('accel'):
-        error_params[name]['N_unit'] = 'm/s^2/rtHz'
-        error_params[name]['B_unit'] = 'm/s^2'
-    
-    axes[idx//3, idx%3].set_title(f'Allan Deviation - {name}')
-    axes[idx//3, idx%3].set_ylabel(f'ADEV, {error_params[name]["B_unit"]}')
+    error_params['Fs'] = Fs
 
-# Barometer analysis
-baro_name = 'baro_altitude'
-raw_pressure = data['pressure'].values.flatten()
-altitude = 44330.0 * (1.0 - np.power(raw_pressure / 1013.25, 0.1903))
+    ax_baro.set_title(f'Allan Deviation - {baro_name}')
+    ax_baro.set_ylabel(f'ADEV, {error_params[baro_name]["B_unit"]}')
 
-tau, adev, adeverr, n = allantools.oadev(altitude, rate=Fs, data_type='freq', taus=taus)
-fig_baro, ax_baro = plt.subplots(figsize=(5, 4))
-gm1_baro = plot_allan_deviation_and_convert_gm(ax_baro, tau, Fs, adev)
+    return error_params
 
-error_params[baro_name] = {
-    'N': float(gm1_baro.N),
-    'B': float(gm1_baro.B),
-    'Tp': float(gm1_baro.Tp),
-    'N_unit': 'm/rtHz',
-    'B_unit': 'm'
-}
 
-ax_baro.set_title(f'Allan Deviation - {baro_name}')
-ax_baro.set_ylabel(f'ADEV, {error_params[baro_name]["B_unit"]}')
 
-# Save to C++ header
-output_file = 'shared/tuned_ekf_params.h'
-with open(output_file, 'w') as f:
-    f.write("// Auto-generated EKF error parameters from Allan deviation analysis\n")
-    f.write("// Generated by tune.py\n\n")
-    f.write("#ifndef TUNED_EKF_PARAMS_H\n")
-    f.write("#define TUNED_EKF_PARAMS_H\n\n")
-    f.write('#include "ekf.h"\n\n')
-    
-    f.write("inline constexpr EkfErrorParameters DEFAULT_PARAMS = {\n")
-    f.write(f"    .sampling_freq = {Fs:.6f},\n")
-    
-    for axis_name, params in error_params.items():
-        clean_name = axis_name.lower()
-        f.write(f"    .{clean_name}_n = {params['N']:.10e},\n")
-        f.write(f"    .{clean_name}_b = {params['B']:.10e},\n")
-        f.write(f"    .{clean_name}_tp = {params['Tp']:.6f},\n")
-    
-    f.seek(f.tell() - 2)  # Remove trailing comma
-    f.write("\n};\n\n")
-    f.write("#endif // TUNED_EKF_PARAMS_H\n")
+def main():
 
-print(f"\n{'-'*40}")
-print(f"IMU error model parameters saved to {output_file}")
+    input_files = [
+        Path("data/sense_hat_data.csv"),
+        Path("data/teensy_ptype_data.csv")
+        ]
+    all_params = {}
+    for data_path in input_files:
+        all_params[data_path.stem] = tune_csv(data_path)
 
-plt.tight_layout()
-plt.show()
+    # Save to C++ header
+    output_file = 'shared/tuned_ekf_params.h'
+    with open(output_file, 'w') as f:
+        f.write("// Auto-generated EKF error parameters from Allan deviation analysis\n")
+        f.write("// Generated by tune.py\n\n")
+        f.write("#ifndef TUNED_EKF_PARAMS_H\n")
+        f.write("#define TUNED_EKF_PARAMS_H\n\n")
+        f.write('#include "ekf.h"\n\n')
+
+        for setup, error_params in all_params.items():
+            
+            f.write(f"inline constexpr EkfErrorParameters {setup.upper()}_PARAMS = \n")
+            f.write("{\n")
+            f.write(f"    .sampling_freq = {error_params['Fs']:.6f},\n")
+            
+            for axis_name, params in error_params.items():
+                if not isinstance(params, dict): continue
+                clean_name = axis_name.lower()
+                f.write(f"    .{clean_name}_n = {params['N']:.10e},\n")
+                f.write(f"    .{clean_name}_b = {params['B']:.10e},\n")
+                f.write(f"    .{clean_name}_tp = {params['Tp']:.6f},\n")
+            
+            f.seek(f.tell() - 2)  # Remove trailing comma
+            f.write("\n};\n\n")
+
+        f.write("#endif // TUNED_EKF_PARAMS_H\n")
+
+    print(f"\n{'-'*40}")
+    print(f"IMU error model parameters saved to {output_file}")
+
+
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    main()

@@ -6,7 +6,34 @@
 
 #include "ekf.h"
 
-constexpr EkfErrorParameters DEFAULT_PARAMS = {
+inline constexpr EkfErrorParameters SENSE_HAT_DATA_PARAMS = 
+{
+    .sampling_freq = 52.051289,
+    .gyro_x_n = 2.1072071062e-04,
+    .gyro_x_b = 1.3405299582e-04,
+    .gyro_x_tp = 13.256156,
+    .gyro_y_n = 1.8296497951e-04,
+    .gyro_y_b = 1.4333840014e-04,
+    .gyro_y_tp = 13.256156,
+    .gyro_z_n = 1.8989422621e-04,
+    .gyro_z_b = 1.5659603614e-04,
+    .gyro_z_tp = 24.994578,
+    .accel_x_n = 1.1208581747e-03,
+    .accel_x_b = 4.3216707585e-04,
+    .accel_x_tp = 13.256156,
+    .accel_y_n = 9.4322053084e-04,
+    .accel_y_b = 5.3190058233e-04,
+    .accel_y_tp = 7.031526,
+    .accel_z_n = 8.6952763744e-03,
+    .accel_z_b = 1.8072688211e-03,
+    .accel_z_tp = 30.892606,
+    .baro_altitude_n = 1.3389559051e-01,
+    .baro_altitude_b = 1.4283838136e-02,
+    .baro_altitude_tp = 0.019212
+};
+
+inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS = 
+{
     .sampling_freq = 52.051289,
     .gyro_x_n = 2.1072071062e-04,
     .gyro_x_b = 1.3405299582e-04,

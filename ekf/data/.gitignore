@@ -4,3 +4,4 @@
 *ekf*
 
 __pycache__/
+*.csv

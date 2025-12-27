@@ -14,8 +14,11 @@ void signalHandler(int signum) {
     running = false;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
+
+    std::string out_filename = "data/sensor_data.csv"
+    if (argc > 1) out_filename = argv[1];
     
     // --- 1. Load Settings ---
     // This looks for "RTIMULib.ini" in the current folder
@@ -65,7 +68,7 @@ int main() {
     }
     
     // Create sensor writer using the shared utility class
-    SensorWriter writer("data/sensor_data.csv");
+    SensorWriter writer(out_filename);
     
     auto startTime = std::chrono::high_resolution_clock::now();
     int sampleRate = imu->IMUGetPollInterval();

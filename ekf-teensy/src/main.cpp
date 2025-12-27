@@ -105,7 +105,7 @@ void setup() {
     Serial.flush();
     
     // Create EKF on heap (deferred from static init)
-    ekf = new EKF16d(DEFAULT_PARAMS);
+    ekf = new EKF16d(TEENSY_PTYPE_DATA_PARAMS);
     
     ekf->initialize(
         EKF16d::NominalVector::Zero(),
