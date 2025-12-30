@@ -42,6 +42,25 @@ public:
         float dt = (now - last_time) * 0.001f;
         last_time = now;
 
+        const Eigen::Vector3d acc_g(accel.acceleration.x,
+                                   accel.acceleration.y,
+                                   accel.acceleration.z);
+        const Eigen::Vector3d gyro_rads(gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
+
+        struct ImuLogSample {
+            float acc_g[3];
+            float gyro_rads[3];
+            float dt;
+        } sample;
+
+        sample.acc_g[0] = static_cast<float>(acc_g.x() / G_ACCEL);
+        sample.acc_g[1] = static_cast<float>(acc_g.y() / G_ACCEL);
+        sample.acc_g[2] = static_cast<float>(acc_g.z() / G_ACCEL);
+        sample.gyro_rads[0] = static_cast<float>(gyro_rads.x());
+        sample.gyro_rads[1] = static_cast<float>(gyro_rads.y());
+        sample.gyro_rads[2] = static_cast<float>(gyro_rads.z());
+        sample.dt = dt;
+
         if (dt > 0.0f && dt < 0.1f) {
             ImuMeasurement msg;
             msg.acc = Eigen::Vector3d(accel.acceleration.x, 
@@ -52,6 +71,8 @@ public:
         }
 
         endTiming();
+
+        saveValueIfEnabled(now, sample);
     }
 };
 

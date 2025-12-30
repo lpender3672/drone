@@ -1,9 +1,3 @@
-// Eigen configuration - must be before including Eigen headers
-#define EIGEN_NO_MALLOC
-#define EIGEN_NO_DEBUG
-#define EIGEN_DONT_VECTORIZE
-#define EIGEN_DISABLE_UNALIGNED_ARRAY_ASSERT
-
 #include <Eigen/Dense>
 #include <ekf16d.h>
 
@@ -32,7 +26,7 @@ MagSensor*  magSensor;
 BaroSensor* baroSensor;
 
 // Sensor array for polymorphic iteration
-constexpr size_t NUM_SENSORS = 4;
+constexpr size_t NUM_SENSORS = 3;
 SensorBase* sensors[NUM_SENSORS];
 
 void ekfDebug(const char* label) {
@@ -43,15 +37,21 @@ void ekfDebug(const char* label) {
 void printTimings() {
     static uint32_t last_print = 0;
     if (millis() - last_print < 1000) return;
-    last_print = millis();
+    const uint32_t now_ms = millis();
+    const uint32_t elapsed_ms = now_ms - last_print;
+    last_print = now_ms;
+    const float window_s = (elapsed_ms > 0) ? (elapsed_ms * 0.001f) : 1.0f;
     
-    Serial.println("--- Sensor Timings (us) ---");
+    Serial.println("--- Sensor Timings (us) / Rate (Hz) ---");
     uint32_t total = 0;
     for (size_t i = 0; i < NUM_SENSORS; i++) {
+        const uint32_t n = sensors[i]->consumeUpdatesSinceReport();
+        const float hz = n / window_s;
         Serial.printf("%-6s: last=%5lu  max=%5lu\n", 
                       sensors[i]->name(),
                       sensors[i]->lastExecUs(),
                       sensors[i]->maxExecUs());
+        Serial.printf("        rate=%.1f Hz (%lu/%lu ms)\n", hz, static_cast<unsigned long>(n), static_cast<unsigned long>(elapsed_ms));
         total += sensors[i]->lastExecUs();
     }
     Serial.printf("Total: %lu us\n", total);
@@ -101,6 +101,12 @@ void setup() {
     Wire.begin();
     Wire.setClock(400000);
 
+    const bool sd_ok = SensorBase::initSd();
+    if (!sd_ok) {
+        Serial.println("WARNING: SD init failed; disabling sensor logging");
+        Serial.flush();
+    }
+
     Serial.println("Initializing EKF...");
     Serial.flush();
     
@@ -115,15 +121,19 @@ void setup() {
 
     // Create sensors
     imuSensor  = new ImuSensor(ekf, 10);   // 100 Hz
+    imuSensor->save_to_sd = sd_ok;
     gnssSensor = new GnssSensor(ekf, 100); // 10 Hz
+    gnssSensor->save_to_sd = false && sd_ok;
     magSensor  = new MagSensor(imuSensor->bno(), ekf, 20);  // 50 Hz
+    magSensor->save_to_sd = sd_ok;
     baroSensor = new BaroSensor(ekf, 50);  // 20 Hz
+    baroSensor->save_to_sd = sd_ok;
 
     // Register in array
     sensors[0] = imuSensor;
-    sensors[1] = gnssSensor;
-    sensors[2] = magSensor;
-    sensors[3] = baroSensor;
+    sensors[1] = magSensor;
+    sensors[2] = baroSensor;
+    //sensors[3] = gnssSensor;
 
     // Initialize all sensors
     Serial.println("Initializing sensors...");
@@ -147,6 +157,6 @@ void loop() {
         }
     }
 
-    //printTimings();
-    printStates();
+    printTimings();
+    //printStates();
 }

@@ -41,6 +41,8 @@ public:
     void update() override {
         startTiming();
 
+        const uint32_t now_ms = millis();
+
         if (!gnss_.getPVT()) {
             endTiming();
             return;
@@ -52,9 +54,9 @@ public:
             return;
         }
 
-        double lat = gnss_.getLatitude() * 1e-7;
-        double lon = gnss_.getLongitude() * 1e-7;
-        double alt = gnss_.getAltitude() * 1e-3;
+        const double lat = gnss_.getLatitude() * 1e-7;
+        const double lon = gnss_.getLongitude() * 1e-7;
+        const double alt = gnss_.getAltitude() * 1e-3;
 
         // Set reference on first fix
         if (!ref_set_) {
@@ -72,6 +74,20 @@ public:
             gnss_.getNedDownVel() * 1e-3
         );
 
+        struct GnssLogSample {
+            float pos[3];
+            float vel[3];
+            uint8_t fix;
+        } sample;
+
+        sample.pos[0] = static_cast<float>(pos_ned.x());
+        sample.pos[1] = static_cast<float>(pos_ned.y());
+        sample.pos[2] = static_cast<float>(pos_ned.z());
+        sample.vel[0] = static_cast<float>(vel_ned.x());
+        sample.vel[1] = static_cast<float>(vel_ned.y());
+        sample.vel[2] = static_cast<float>(vel_ned.z());
+        sample.fix = fix;
+
         // Position covariance (diagonal)
         Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * (pos_std_ * pos_std_);
         Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * (vel_std_ * vel_std_);
@@ -80,6 +96,8 @@ public:
         ekf_->update_gnss_velocity(vel_ned, R_vel);
 
         endTiming();
+
+        saveValueIfEnabled(now_ms, sample);
     }
 
     bool hasReference() const { return ref_set_; }

@@ -24,15 +24,27 @@ public:
     void update() override {
         startTiming();
 
+        const uint32_t now_ms = millis();
+
         sensors_event_t mag;
         bno_->getEvent(&mag, Adafruit_BNO055::VECTOR_MAGNETOMETER);
 
         Eigen::Vector3d mag_body(mag.magnetic.x, mag.magnetic.y, mag.magnetic.z);
+
+        struct MagLogSample {
+            float mag_uT[3];
+        } sample;
+
+        sample.mag_uT[0] = static_cast<float>(mag_body.x());
+        sample.mag_uT[1] = static_cast<float>(mag_body.y());
+        sample.mag_uT[2] = static_cast<float>(mag_body.z());
         Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * (mag_std_ * mag_std_);
 
         ekf_->update_magnetometer(mag_body, R);
 
         endTiming();
+
+        saveValueIfEnabled(now_ms, sample);
     }
 
     void setMagStd(double std) { mag_std_ = std; }
