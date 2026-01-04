@@ -104,7 +104,9 @@ def _estimate_sample_rate_hz(sample_t_s: np.ndarray) -> float:
     return 1.0 / T_avg
 
 
-def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str = 'Fs'):
+def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str = 'Fs',
+                   axes: Optional[np.ndarray] = None, ax_baro: Optional[plt.Axes] = None,
+                   label: Optional[str] = None):
     """Tune from a dataframe with timestamp + sensor columns.
 
     Expected columns (any subset is ok):
@@ -113,6 +115,12 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
       accel_x/y/z (g)
       baro_altitude (m)
       mag_x/y/z (uT)  [optional; not written to C++ params]
+    
+    Parameters:
+    -----------
+    axes : Optional array of matplotlib axes (2x3) for IMU plots. If None, creates new figure.
+    ax_baro : Optional matplotlib axis for barometer plot. If None, creates new figure.
+    label : Optional label for the legend (e.g., setup name)
     """
     error_params: Dict[str, Dict[str, float]] = {}
 
@@ -129,7 +137,8 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
     available_imu = [h for h in imu_headers if h in data.columns]
 
     if available_imu:
-        fig, axes = plt.subplots(2, 3, figsize=(10, 6))
+        if axes is None:
+            _fig, axes = plt.subplots(2, 3, figsize=(10, 6))
         for idx, name in enumerate(imu_headers):
             if name not in data.columns:
                 continue
@@ -145,7 +154,7 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
 
             print(f"raw_axis_data shape: {raw_axis_data.shape}")
             tau, adev, _adeverr, _n = allantools.oadev(raw_axis_data, rate=Fs, data_type='freq', taus=taus)
-            gm1 = plot_allan_deviation_and_convert_gm(axes[idx//3, idx%3], tau, Fs, adev)
+            gm1 = plot_allan_deviation_and_convert_gm(axes[idx//3, idx%3], tau, Fs, adev, label=label)
 
             error_params[name] = {
                 'N': float(gm1.N),
@@ -169,8 +178,9 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
         altitude = data['baro_altitude'].values.astype(float).flatten()
 
         tau, adev, _adeverr, _n = allantools.oadev(altitude, rate=Fs, data_type='freq', taus=taus)
-        _fig_baro, ax_baro = plt.subplots(figsize=(5, 4))
-        gm1_baro = plot_allan_deviation_and_convert_gm(ax_baro, tau, Fs, adev)
+        if ax_baro is None:
+            _fig_baro, ax_baro = plt.subplots(figsize=(5, 4))
+        gm1_baro = plot_allan_deviation_and_convert_gm(ax_baro, tau, Fs, adev, label=label)
 
         error_params[baro_name] = {
             'N': float(gm1_baro.N),
@@ -209,7 +219,7 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
     error_params[fs_key] = float(Fs)
     return error_params
 
-def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev):
+def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev, label: Optional[str] = None):
     """
     Plot Allan deviation and estimate noise parameters.
     
@@ -217,7 +227,7 @@ def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev):
     --------
     ASD_to_GaussMarkovFirstOrder : class containing 1st order gauss markov parameters
     """
-    ax.loglog(tau, adev, 'o', label='Allan Deviation')
+    ax.loglog(tau, adev, 'o', label=label if label else 'Allan Deviation', markersize=4)
     ax.set_xlabel('Delay, seconds')
     ax.minorticks_on()
     ax.grid(which='both', axis='both')
@@ -243,7 +253,8 @@ def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev):
     return gm1
 
 
-def tune_csv(path):
+def tune_csv(path, axes: Optional[np.ndarray] = None, ax_baro: Optional[plt.Axes] = None,
+             label: Optional[str] = None):
     print(f"Loading data from {path}")
     try:
         data = pd.read_csv(path)
@@ -256,10 +267,11 @@ def tune_csv(path):
         data = data.copy()
         data['baro_altitude'] = 44330.0 * (1.0 - np.power(raw_pressure / 1013.25, 0.1903))
 
-    return tune_dataframe(data)
+    return tune_dataframe(data, axes=axes, ax_baro=ax_baro, label=label)
 
 
-def tune_teensy_bin_dir(data_dir: Path):
+def tune_teensy_bin_dir(data_dir: Path, axes: Optional[np.ndarray] = None,
+                        ax_baro: Optional[plt.Axes] = None, label: Optional[str] = None):
     """Tune IMU + Baro from Teensy SensorBase .bin logs in a directory."""
     imu_path = data_dir / 'IMU.bin'
     baro_path = data_dir / 'Baro.bin'
@@ -275,20 +287,20 @@ def tune_teensy_bin_dir(data_dir: Path):
     if imu_path.exists():
         print(f"Loading IMU bin from {imu_path}")
         imu_df = load_teensy_imu_bin(imu_path)
-        plt.plot(imu_df['timestamp'], imu_df['gyro_x'], label='gyro_x')
-        plt.show()
+        #plt.plot(imu_df['timestamp'], imu_df['gyro_x'], label='gyro_x')
+        #plt.show()
 
     if baro_path.exists():
         print(f"Loading Baro bin from {baro_path}")
         baro_df = load_teensy_baro_bin(baro_path)
-        plt.plot(baro_df['timestamp'], baro_df['baro_altitude'], label='baro_altitude')
-        plt.show()
+        #plt.plot(baro_df['timestamp'], baro_df['baro_altitude'], label='baro_altitude')
+        #plt.show()
 
     if mag_path.exists():
         print(f"Loading Mag bin from {mag_path}")
         _mag_df = load_teensy_mag_bin(mag_path)
-        plt.plot(_mag_df['timestamp'], _mag_df['mag_x'], label='mag_x')
-        plt.show()
+        #plt.plot(_mag_df['timestamp'], _mag_df['mag_x'], label='mag_x')
+        #plt.show()
 
     else:
         _mag_df = None
@@ -301,12 +313,12 @@ def tune_teensy_bin_dir(data_dir: Path):
     params: Dict[str, Dict[str, float]] = {}
 
     if imu_df is not None and not imu_df.empty:
-        params.update(tune_dataframe(imu_df, include_mag=False, fs_key='imu_Fs'))
+        params.update(tune_dataframe(imu_df, include_mag=False, fs_key='imu_Fs', axes=axes, label=label))
     else:
         params['imu_Fs'] = 0.0
 
     if baro_df is not None and not baro_df.empty:
-        baro_params = tune_dataframe(baro_df, include_mag=False, fs_key='baro_Fs')
+        baro_params = tune_dataframe(baro_df, include_mag=False, fs_key='baro_Fs', ax_baro=ax_baro, label=label)
         if 'baro_altitude' in baro_params:
             params['baro_altitude'] = baro_params['baro_altitude']
         params['baro_Fs'] = baro_params.get('baro_Fs', 0.0)
@@ -322,25 +334,30 @@ def main():
     repo_root = ekf_dir.parent
 
     sense_hat_csv = ekf_dir / 'data' / 'sense_hat_data.csv'
-    teensy_teensy_bin_dir = repo_root / 'ekf-teensy' / 'data'
-    teensy_csv_fallback = ekf_dir / 'data' / 'teensy_ptype_data.csv'
+    teensy_teensy_bin_dir = repo_root / 'ekf-teensy' / 'data' / 'bno055setup'
 
     all_params = {}
 
+    # Create shared figure with 6 axes for all setups
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+    fig.suptitle('Allan Deviation Comparison - IMU')
+
+    # Create shared baro axis
+    fig_baro, ax_baro = plt.subplots(figsize=(6, 4))
+    fig_baro.suptitle('Allan Deviation Comparison - Barometer')
+
     if sense_hat_csv.exists():
-        all_params['sense_hat_data'] = tune_csv(sense_hat_csv)
+        all_params['sense_hat_data'] = tune_csv(sense_hat_csv, axes=axes, ax_baro=ax_baro, label='sense_hat')
     else:
         print(f"WARNING: missing {sense_hat_csv}")
         all_params['sense_hat_data'] = {}
 
-    teensy_params = tune_teensy_bin_dir(teensy_teensy_bin_dir)
+    teensy_params = tune_teensy_bin_dir(teensy_teensy_bin_dir, axes=axes, ax_baro=ax_baro, label='teensy')
     if teensy_params:
         all_params['teensy_ptype_data'] = teensy_params
-    elif teensy_csv_fallback.exists():
-        print("Falling back to teensy_ptype_data.csv")
-        all_params['teensy_ptype_data'] = tune_csv(teensy_csv_fallback)
+
     else:
-        print(f"WARNING: missing Teensy bin dir and CSV fallback: {teensy_teensy_bin_dir} / {teensy_csv_fallback}")
+        print(f"WARNING: missing Teensy bin dir {teensy_teensy_bin_dir}")
         all_params['teensy_ptype_data'] = {}
 
     # Save to C++ header
