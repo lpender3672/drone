@@ -32,7 +32,7 @@ inline constexpr EkfErrorParameters SENSE_HAT_DATA_PARAMS =
     .baro_altitude_tp = 0.019212,
 };
 
-inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS = 
+inline constexpr EkfErrorParameters BNO055_DATA_PARAMS = 
 {
     .sampling_freq = 99.927690,
     .gyro_x_n = 2.7455781310e-04,
@@ -55,6 +55,32 @@ inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS =
     .accel_z_tp = 316.228665,
     .baro_altitude_n = 1.8783743686e-02,
     .baro_altitude_b = 8.1489591735e-03,
+    .baro_altitude_tp = 0.050000,
+};
+
+inline constexpr EkfErrorParameters MPU6050_DATA_PARAMS = 
+{
+    .sampling_freq = 99.945245,
+    .gyro_x_n = 7.0433268599e-05,
+    .gyro_x_b = 2.2728831613e-05,
+    .gyro_x_tp = 38.160895,
+    .gyro_y_n = 7.6854053971e-05,
+    .gyro_y_b = 2.6639764623e-05,
+    .gyro_y_tp = 58.251896,
+    .gyro_z_n = 6.8937324510e-05,
+    .gyro_z_b = 2.6495159965e-05,
+    .gyro_z_tp = 88.918688,
+    .accel_x_n = 2.0777461630e-03,
+    .accel_x_b = 6.1743157388e-04,
+    .accel_x_tp = 38.160895,
+    .accel_y_n = 2.0846862828e-03,
+    .accel_y_b = 6.4564284734e-04,
+    .accel_y_tp = 71.969407,
+    .accel_z_n = 2.0399219620e-03,
+    .accel_z_b = 4.7192764745e-04,
+    .accel_z_tp = 207.173438,
+    .baro_altitude_n = 2.4586736564e-02,
+    .baro_altitude_b = 8.1133600474e-03,
     .baro_altitude_tp = 0.050000,
 };
 

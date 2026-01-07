@@ -126,6 +126,8 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
 
     sample_t = data['timestamp'].values.astype(float).flatten()
     Fs = _estimate_sample_rate_hz(sample_t)
+    duration_key = 'duration_s'
+    duration_s = float(sample_t[-1] - sample_t[0])
 
     taus = np.logspace(-2, 2.5, 50)
 
@@ -217,6 +219,7 @@ def tune_dataframe(data: pd.DataFrame, *, include_mag: bool = False, fs_key: str
             fig_mag.tight_layout()
 
     error_params[fs_key] = float(Fs)
+    error_params[duration_key] = float(duration_s)
     return error_params
 
 def plot_allan_deviation_and_convert_gm(ax, tau, Fs, adev, label: Optional[str] = None):
@@ -334,7 +337,8 @@ def main():
     repo_root = ekf_dir.parent
 
     sense_hat_csv = ekf_dir / 'data' / 'sense_hat_data.csv'
-    teensy_teensy_bin_dir = repo_root / 'ekf-teensy' / 'data' / 'bno055setup'
+    teensy_bno055_bin_dir = repo_root / 'ekf-teensy' / 'data' / 'bno055setup'
+    teensy_mpu6050_bin_dir = repo_root / 'ekf-teensy' / 'data' / 'mpu6050setup'
 
     all_params = {}
 
@@ -347,18 +351,25 @@ def main():
     fig_baro.suptitle('Allan Deviation Comparison - Barometer')
 
     if sense_hat_csv.exists():
-        all_params['sense_hat_data'] = tune_csv(sense_hat_csv, axes=axes, ax_baro=ax_baro, label='sense_hat')
+        all_params['sense_hat_data'] = tune_csv(sense_hat_csv, axes=axes, ax_baro=ax_baro, label='LSM9DS1')
     else:
         print(f"WARNING: missing {sense_hat_csv}")
         all_params['sense_hat_data'] = {}
 
-    teensy_params = tune_teensy_bin_dir(teensy_teensy_bin_dir, axes=axes, ax_baro=ax_baro, label='teensy')
-    if teensy_params:
-        all_params['teensy_ptype_data'] = teensy_params
+    bno055_params = tune_teensy_bin_dir(teensy_bno055_bin_dir, axes=axes, ax_baro=ax_baro, label='BNO055')
+    if bno055_params:
+        all_params['bno055_data'] = bno055_params
 
     else:
-        print(f"WARNING: missing Teensy bin dir {teensy_teensy_bin_dir}")
-        all_params['teensy_ptype_data'] = {}
+        print(f"WARNING: missing Teensy bin dir {teensy_bno055_bin_dir}")
+        all_params['bno055_data'] = {}
+
+    mpu6050_params = tune_teensy_bin_dir(teensy_mpu6050_bin_dir, axes=axes, ax_baro=ax_baro, label='MPU6050')
+    if mpu6050_params:
+        all_params['mpu6050_data'] = mpu6050_params
+    else:
+        print(f"WARNING: missing Teensy bin dir {teensy_mpu6050_bin_dir}")
+        all_params['mpu6050_data'] = {}
 
     # Save to C++ header
     output_file = ekf_dir / 'shared' / 'tuned_ekf_params.h'
@@ -395,8 +406,14 @@ def main():
     print(f"\n{'-'*40}")
     print(f"IMU error model parameters saved to {output_file}")
 
+    for setup, error_params in all_params.items():
+        print(f"\nSetup {setup} lasted {error_params.get('duration_s', 0.0):.1f} seconds")
 
-    plt.tight_layout()
+    axes[0,0].legend()
+    fig.tight_layout()
+    fig_baro.legend()
+    fig_baro.tight_layout()
+
     plt.show()
 
 if __name__ == "__main__":

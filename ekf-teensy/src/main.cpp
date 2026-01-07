@@ -26,7 +26,7 @@ MagSensor*  magSensor;
 BaroSensor* baroSensor;
 
 // Sensor array for polymorphic iteration
-constexpr size_t NUM_SENSORS = 3;
+constexpr size_t NUM_SENSORS = 2;
 SensorBase* sensors[NUM_SENSORS];
 
 void ekfDebug(const char* label) {
@@ -124,15 +124,15 @@ void setup() {
     imuSensor->save_to_sd = sd_ok;
     gnssSensor = new GnssSensor(ekf, 100); // 10 Hz
     gnssSensor->save_to_sd = false && sd_ok;
-    magSensor  = new MagSensor(imuSensor->bno(), ekf, 20);  // 50 Hz
-    magSensor->save_to_sd = sd_ok;
+    //magSensor  = new MagSensor(imuSensor->bno(), ekf, 20);  // 50 Hz
+    //magSensor->save_to_sd = sd_ok;
     baroSensor = new BaroSensor(ekf, 50);  // 20 Hz
     baroSensor->save_to_sd = sd_ok;
 
     // Register in array
     sensors[0] = imuSensor;
-    sensors[1] = magSensor;
-    sensors[2] = baroSensor;
+    //sensors[1] = magSensor;
+    sensors[1] = baroSensor;
     //sensors[3] = gnssSensor;
 
     // Initialize all sensors
