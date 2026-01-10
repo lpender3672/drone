@@ -2,7 +2,12 @@
 #define EKF_DEFS_H
 
 #include <Eigen/Dense>
+#include "../../shared/sensors/sensor_readings.h"
 
+// Import sensor types into global namespace for EKF compatibility
+using sensors::ImuMeasurement;
+using sensors::Vec3;
+using sensors::Mat3;
 
 struct EkfStatus {
     bool positive_definite_guaranteed;  // Gershgorin lower bounds all > 0
@@ -12,12 +17,6 @@ struct EkfStatus {
     double min_gershgorin_lower;        // Smallest eigenvalue lower bound
     double max_variance;                // Largest diagonal element
     int suspect_state;                  // Index of most concerning state (-1 if ok)
-};
-
-struct ImuMeasurement {
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    Eigen::Vector3d acc;    // Specific Force [g]
-    Eigen::Vector3d gyro;   // Angular Rate [rad/s]
 };
 
 struct EkfErrorParameters {

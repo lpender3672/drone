@@ -85,9 +85,10 @@ public:
         latest_reading_.latitude_deg = lat;
         latest_reading_.longitude_deg = lon;
         latest_reading_.altitude_m = alt;
-        latest_reading_.vel_north = gnss_.getNedNorthVel() * 1e-3f;
-        latest_reading_.vel_east = gnss_.getNedEastVel() * 1e-3f;
-        latest_reading_.vel_down = gnss_.getNedDownVel() * 1e-3f;
+        latest_reading_.velocity_ned = Eigen::Vector3d(
+            gnss_.getNedNorthVel() * 1e-3,
+            gnss_.getNedEastVel() * 1e-3,
+            gnss_.getNedDownVel() * 1e-3);
         latest_reading_.fix_type = fix;
         latest_reading_.num_satellites = gnss_.getSIV();
         latest_reading_.hdop = gnss_.getHorizontalDOP() * 0.01f;
@@ -98,11 +99,7 @@ public:
 
         // Update EKF
         Eigen::Vector3d pos_ned(lat, lon, alt);
-        Eigen::Vector3d vel_ned(
-            latest_reading_.vel_north,
-            latest_reading_.vel_east,
-            latest_reading_.vel_down
-        );
+        const Eigen::Vector3d& vel_ned = latest_reading_.velocity_ned;
 
         // Position covariance (diagonal)
         Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * (pos_std_ * pos_std_);

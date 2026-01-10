@@ -43,9 +43,10 @@ public:
 
         // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
-        latest_reading_.mag_x = mag.magnetic.x;
-        latest_reading_.mag_y = mag.magnetic.y;
-        latest_reading_.mag_z = mag.magnetic.z;
+        latest_reading_.field = Eigen::Vector3d(
+            mag.magnetic.x,
+            mag.magnetic.y,
+            mag.magnetic.z);
         latest_reading_.valid = true;
 
         new_reading_available_ = true;

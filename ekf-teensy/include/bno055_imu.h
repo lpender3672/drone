@@ -60,12 +60,14 @@ public:
 
         // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
-        latest_reading_.accel_x = accel.acceleration.x;
-        latest_reading_.accel_y = accel.acceleration.y;
-        latest_reading_.accel_z = accel.acceleration.z;
-        latest_reading_.gyro_x = gyro.gyro.x;
-        latest_reading_.gyro_y = gyro.gyro.y;
-        latest_reading_.gyro_z = gyro.gyro.z;
+        latest_reading_.acc = Eigen::Vector3d(
+            accel.acceleration.x,
+            accel.acceleration.y,
+            accel.acceleration.z);
+        latest_reading_.gyro = Eigen::Vector3d(
+            gyro.gyro.x,
+            gyro.gyro.y,
+            gyro.gyro.z);
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
@@ -73,10 +75,8 @@ public:
         // Update EKF if valid time step
         if (dt > 0.0f && dt < 0.1f) {
             ImuMeasurement msg;
-            msg.acc = Eigen::Vector3d(accel.acceleration.x, 
-                                       accel.acceleration.y, 
-                                       accel.acceleration.z) / G_ACCEL;
-            msg.gyro = Eigen::Vector3d(gyro.gyro.x, gyro.gyro.y, gyro.gyro.z);
+            msg.acc = latest_reading_.acc / G_ACCEL;  // Convert to g's for EKF
+            msg.gyro = latest_reading_.gyro;
             // ekf_->predict(msg, dt);  // Uncomment when needed
         }
 
