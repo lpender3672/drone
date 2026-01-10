@@ -1,0 +1,7 @@
+
+# I try not to dox myself
+*gps*
+*ekf*
+
+__pycache__/
+*.csv

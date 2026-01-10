@@ -13,6 +13,7 @@
 #include "Adafruit_BMP280.h"
 #include "CrsfSerial.h"
 #include "motor.h"
+#include "observer.h"
 #include "control.h"
 
 
@@ -28,6 +29,7 @@
 
 #define ESC0_PIN 6
 
+#define CALIBRATION_DONE 0xf3
 #define DEVICES_FOUND 0xf5
 #define BNO055_NOT_FOUND 0xf6
 #define BMP280_NOT_FOUND 0xf7
@@ -244,16 +246,30 @@ void core1_entry() {
     gpio_set_function(7, GPIO_FUNC_I2C);
     gpio_pull_up(6);
     gpio_pull_up(7);
+
+
+    int n = 15;  // State dimension
+    int m = 6;   // Measurement dimension
+    int p = 6;   // Input dimension
     
+    Eigen::Vector3f av_sbsnsk_x(2.3849777e-08, 8.10145792e-08, -6.192712e-09);
+    Eigen::Vector3f asd_nk_x(9.00080991772e-04, 7.8693783931e-08, 0);
+    Eigen::Vector3f av_sbsnsk_y(3.307765e-08, 1.212550812e-07, -8.316799e-09);
+    Eigen::Vector3f asd_nk_y(1.101158849699e-03, 9.1196484605e-08, 0);
+    Eigen::Vector3f av_sbsnsk_z(4.8680079e-08, 2.249460173e-07, -1.3556376e-08);
+    Eigen::Vector3f asd_nk_z(1.499820046923e-03, 1.16431850147e-07, 0);
+
+    EKF ekf(1/83.56, av_sbsnsk_x, av_sbsnsk_y, av_sbsnsk_z, asd_nk_x, asd_nk_y, asd_nk_z);
+
+
     Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28, i2c1);
     if (!bno.begin()) {
         multicore_fifo_push_blocking(BNO055_NOT_FOUND);
         while(1) tight_loop_contents();
     }
+    bno.setMode(OPERATION_MODE_NDOF);
 
-    // set filter to 1000Hz
-    
-    
+
     Adafruit_BMP280 bmp = Adafruit_BMP280(i2c1);
     if (!bmp.begin(0x76, 0x60)) {
         multicore_fifo_push_blocking(BMP280_NOT_FOUND);
@@ -262,20 +278,67 @@ void core1_entry() {
     
     multicore_fifo_push_blocking(DEVICES_FOUND);
 
+
+    // get calibration
+    /*
+    uint8_t sys, gyro, accel, mag = 0;
+    while (sys < 3 || gyro < 3 || accel < 3 || mag < 3) {
+        bno.getCalibration(&sys, &gyro, &accel, &mag);
+        printf("Calibration: Sys=%d Gyro=%d Accel=%d Mag=%d\n", sys, gyro, accel, mag);
+        sleep_ms(100);
+    }
+    */
+    // it is actually possible to save the calibration data to flash on the pico but it is not implemented here
+    /*
+    adafruit_bno055_offsets_t bno_offsets;
+    bno.getSensorOffsets(bno_offsets);    
+    */
+    sleep_ms(1000);
+    multicore_fifo_push_blocking(CALIBRATION_DONE);
+
+    uint64_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint64_t last_loop_time, now; // us
+    double dt; // s
+
     while (1) {
-      sensors_event_t orientationData, accelerationData;
-      bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
-      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+
+      // read
+      sensors_event_t accelerationData, orientationData;
       bno.getEvent(&accelerationData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+      //bno.getEvent(&orientationData, Adafruit_BNO055::VECTOR_EULER);
+      //Eigen::Vector3d acceleration(accelerationData.acceleration.x, accelerationData.acceleration.y, accelerationData.acceleration.z);
+      Eigen::Quaternionf orientation = bno.getQuat();
+
+      Eigen::Matrix<float, 3, 1> acceleration;
+      acceleration <<  accelerationData.acceleration.x, 
+            accelerationData.acceleration.y, 
+            accelerationData.acceleration.z;
+      //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GYROSCOPE);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
       //bno.getEvent(&sensorData, Adafruit_BNO055::VECTOR_GRAVITY);
+      double altitude = bmp.readAltitude(1013.25); // in hPa
+
+      // finished reading
+
+      now = to_us_since_boot(get_absolute_time());
+      dt = (now - last_loop_time) / 1e6; // s
+      last_loop_time = now;
+      ekf.predict(acceleration, orientation, dt);
+
+      Eigen::Matrix<float, 3, 1> z;
+      z << acceleration;
+      ekf.update(acceleration, orientation);
 
 
-      multicore_fifo_push_blocking((uint32_t)(&orientationData));
-      multicore_fifo_push_blocking((uint32_t)(&accelerationData));
+      Eigen::VectorXf gotState = ekf.getStateEstimate(); // 3 position, 4 quaternion
+      // convert to double array
+      multicore_fifo_push_blocking((uint32_t)(&gotState));
 
-      sleep_ms(10);
+      
+      if (dt*1e3 < 10) {
+        sleep_us(10*1e3 - dt*1e3);
+      }
     }
 }
 
@@ -366,31 +429,20 @@ int main(void){
     }
     */
 
+    while (!multicore_fifo_rvalid()) {
+        sleep_ms(100);
+        gpio_put(25, !gpio_get(25));
+    }
+    multicore_fifo_pop_blocking();
+
     arm_escs();
     //calibrate_escs(); // takes several seconds to calibrate and requires a battery to be removed and reconnected
     sleep_ms(500);
 
-    // Call accelerometer initialisation function
-    
-    /*
-    int8_t temp = bno.getTemp();
-    Eigen::Vector3f angles = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-    printf("Euler: %f, %f, %f\n", angles.x(), angles.y(), angles.z());
-    Eigen::Quaternionf quat = bno.getQuat();
-    printf("Quaternion: %f, %f, %f, %f\n", quat.w(), quat.x(), quat.y(), quat.z());
-    */
-
-    PID roll_pid(2, 0, 0.075*6, 100);
-    PID pitch_pid(0.1, 0.0, 0.0, 1e3);
-    PID yaw_pid(0.1, 0.0, 0.0, 1e3);
-    PID altitude_pid(0.1, 0.0, 0.0, 0.0);
-
-
-    uint32_t loop_start_time = to_us_since_boot(get_absolute_time());
-    uint32_t last_loop_time, now; // us
-    uint32_t last_orient_time = loop_start_time;
-    uint32_t last_accel_time = loop_start_time;
-    double dt, orient_dt, accel_dt; // us
+    uint64_t loop_start_time = to_us_since_boot(get_absolute_time());
+    uint64_t last_loop_time, now; // us
+    uint64_t last_state_time = loop_start_time;
+    double dt, state_dt; // us
     // Infinite Loop
     while(1){
 
@@ -398,38 +450,20 @@ int main(void){
       dt = (now - last_loop_time) / 1e6; // loop dt
 
       if (multicore_fifo_rvalid()){
-          while (multicore_fifo_rvalid()) { // TODO: make this a while loop and switch sensor types
-            sensors_event_t* receivedPtr = (sensors_event_t*)multicore_fifo_pop_blocking();
+          Eigen::VectorXd* receivedPtr = (Eigen::VectorXd*)multicore_fifo_pop_blocking();
+          Eigen::Map<Eigen::VectorXd> receivedStates(receivedPtr->data(), 15);
 
-            switch (receivedPtr->type) {
-              case SENSOR_TYPE_ORIENTATION:
-                orient_dt = (receivedPtr->timestamp - last_orient_time) / 1e6;
-                last_orient_time = receivedPtr->timestamp;
+          state_dt = (now - last_state_time) / 1e6; // state dt
 
-                // update orientation
-                roll = receivedPtr->orientation.z;
-                roll += (roll < 0) * 360 - 180; // convert to -180 180 range
-                pitch = receivedPtr->orientation.y;
-                yaw = receivedPtr->orientation.x;
-
-                printf("Orientation: dt: %f vector: Roll: %f, Pitch: %f, Yaw: %f\n", orient_dt, roll, pitch, yaw);
-                break;
-              case SENSOR_TYPE_LINEAR_ACCELERATION:
-                // update acceleration
-                accel_dt = (receivedPtr->timestamp - last_accel_time) / 1e6;
-                last_accel_time = receivedPtr->timestamp;
-
-                printf("Acceleration: dt: %f vector: %f, %f, %f\n", accel_dt, receivedPtr->acceleration.x, receivedPtr->acceleration.y, receivedPtr->acceleration.z);
-                break;
-              default:
-                break;
-            }
+          printf("states ");
+          printf("%f", state_dt);
+          for (int i = 0; i < 15; i++) {
+            printf(" %f", receivedStates[i]);
           }
+          printf("\n");
           /*
-          // update PID
-          double roll_input = roll_pid.update(roll - roll_demand, sensor_dt);
-          double pitch_input = 0; // pitch_pid.update(pitch - pitch_demand, sensor_dt);
-          double yaw_input = 0; // yaw_pid.update(yaw - yaw_demand, sensor_dt);
+          // update SS
+
 
           // now update the escs
           escs[0].setSpeed(
@@ -445,7 +479,7 @@ int main(void){
             throttle - roll_input - yaw_input
           );
           */
-          
+          last_state_time = now;
       }
       
       ELRS_rx.loop();
@@ -453,7 +487,7 @@ int main(void){
       uint16_t adc_voltage_reading = adc_read();
       battery_voltage = 4 * adc_voltage_reading * ADC_conversion_factor;
 
-      if (battery_voltage < 8  && battery_voltage > 1) {
+      if (battery_voltage < 10  && battery_voltage > 1) {
         
         set_escs(false);
         while (1) tight_loop_contents();

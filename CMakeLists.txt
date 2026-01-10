@@ -24,8 +24,10 @@ add_compile_options(-Wall
         -Wno-unused-function # we have some for the docs that aren't called
         -Wno-maybe-uninitialized
         -g3
+        -fno-math-errno
         )
 
 add_subdirectory(tests)
 add_subdirectory(drone)
+add_subdirectory(tuning)
 
