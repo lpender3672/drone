@@ -27,7 +27,7 @@ namespace sensors {
 /**
  * Teensy-specific sensor logger base class.
  * Provides SD card logging functionality for Teensy platform sensors.
- * This is a mixin class that adds logging capabilities without inheriting from SensorBase.
+ * This is a mixin class that adds logging capabilities without inheriting from Sensor.
  */
 class TeensySensorLogger {
 protected:

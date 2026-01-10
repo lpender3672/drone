@@ -1,7 +1,8 @@
 #ifndef EKF_TEENSY_BNO055_MAG_H
 #define EKF_TEENSY_BNO055_MAG_H
 
-#include <mag_sensor_base.h>
+#include <sensor_base.h>
+#include <sensor_readings.h>
 #include <Adafruit_BNO055.h>
 #include <ekf.h>
 
@@ -11,22 +12,17 @@
  * BNO055 magnetometer sensor implementation for Teensy.
  * Shares the BNO055 chip with the IMU sensor.
  */
-class BNO055Mag : public sensors::MagSensorBase, public sensors::TeensySensorLogger {
+class BNO055Mag : public sensors::Sensor<sensors::MagReading>, public sensors::TeensySensorLogger {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
     IEKF* ekf_;
     double mag_std_ = 0.5;  // uT
-    bool new_reading_available_ = false;
 
 public:
     BNO055Mag(Adafruit_BNO055* bno, IEKF* ekf, uint32_t interval_ms = 20)
-        : MagSensorBase("Mag", interval_ms * 1000),
+        : Sensor<sensors::MagReading>("Mag", interval_ms * 1000),
           TeensySensorLogger("Mag", interval_ms * 1000),
           bno_(bno), ekf_(ekf) {}
-
-    bool has_new_reading() const override { return new_reading_available_; }
-    
-    void clear_new_reading_flag() override { new_reading_available_ = false; }
 
     bool is_due(uint32_t current_time_us) override {
         return TeensySensorLogger::is_due(current_time_us);

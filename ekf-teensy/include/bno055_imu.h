@@ -1,7 +1,8 @@
 #ifndef EKF_TEENSY_BNO055_IMU_H
 #define EKF_TEENSY_BNO055_IMU_H
 
-#include "imu_sensor_base.h"
+#include <sensor_base.h>
+#include <sensor_readings.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
 #include <ekf.h>
@@ -10,23 +11,19 @@
  * BNO055 IMU sensor implementation for Teensy.
  * Provides accelerometer and gyroscope readings from the BNO055 chip.
  */
-class BNO055Imu : public sensors::ImuSensorBase, public sensors::TeensySensorLogger {
+class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::TeensySensorLogger {
 private:
     Adafruit_BNO055 bno_;
     IEKF* ekf_;
     static constexpr double G_ACCEL = 9.80665;
-    bool new_reading_available_ = false;
 
 public:
     BNO055Imu(IEKF* ekf, uint32_t interval_ms = 10)
-        : ImuSensorBase("IMU", interval_ms * 1000), 
+        : Sensor<sensors::ImuReading>("IMU", interval_ms * 1000), 
           TeensySensorLogger("IMU", interval_ms * 1000),
           bno_(55, 0x28), ekf_(ekf) {}
 
     // Get access to the underlying BNO055 object (for sharing with magnetometer)
-    bool has_new_reading() const override { return new_reading_available_; }
-    
-    void clear_new_reading_flag() override { new_reading_available_ = false; }
 
     bool is_due(uint32_t current_time_us) override {
         return TeensySensorLogger::is_due(current_time_us);

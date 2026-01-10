@@ -1,5 +1,6 @@
 #include <Eigen/Dense>
 #include <ekf16d.h>
+#include <sensor_interface.h>
 
 #include <Arduino.h>
 #include "bno055_imu.h"
@@ -26,7 +27,7 @@ BMP280Baro*  baroSensor;
 
 // Sensor array for polymorphic iteration
 constexpr size_t NUM_SENSORS = 3;
-sensors::SensorBase* sensor_array[NUM_SENSORS];
+sensors::ISensor* sensor_array[NUM_SENSORS];
 
 void ekfDebug(const char* label) {
     Serial.printf("%s - free: %d\n", label, freeram());

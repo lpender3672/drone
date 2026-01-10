@@ -1,7 +1,8 @@
 #ifndef EKF_TEENSY_UBLOX_GNSS_H
 #define EKF_TEENSY_UBLOX_GNSS_H
 
-#include <gnss_sensor_base.h>
+#include <sensor_base.h>
+#include <sensor_readings.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <ekf.h>
 
@@ -15,7 +16,7 @@ constexpr double DEG_TO_RAD = M_PI / 180.0;
  * u-blox GNSS sensor implementation for Teensy.
  * Provides position and velocity measurements from u-blox GPS modules.
  */
-class UbloxGnss : public sensors::GnssSensorBase, public sensors::TeensySensorLogger {
+class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::TeensySensorLogger {
 private:
     SFE_UBLOX_GNSS gnss_;
     IEKF* ekf_;
@@ -23,7 +24,6 @@ private:
     // Reference position for local frame
     double lat_ref_ = 0.0, lon_ref_ = 0.0, alt_ref_ = 0.0;
     bool ref_set_ = false;
-    bool new_reading_available_ = false;
     
     // Noise parameters
     double pos_std_ = 2.0;  // meters
@@ -31,13 +31,9 @@ private:
 
 public:
     UbloxGnss(IEKF* ekf, uint32_t interval_ms = 100)
-        : GnssSensorBase("GNSS", interval_ms * 1000),
+        : Sensor<sensors::GnssReading>("GNSS", interval_ms * 1000),
           TeensySensorLogger("GNSS", interval_ms * 1000),
           ekf_(ekf) {}
-
-    bool has_new_reading() const override { return new_reading_available_; }
-    
-    void clear_new_reading_flag() override { new_reading_available_ = false; }
 
     bool is_due(uint32_t current_time_us) override {
         return TeensySensorLogger::is_due(current_time_us);
