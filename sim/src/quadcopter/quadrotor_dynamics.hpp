@@ -78,10 +78,10 @@ protected:
         Vec3 drag = -params_.drag_coeff * state_.velocity;
 
         // Gravity in NED
-        Vec3 gravity_ned(0.0, 0.0, params_.mass * params_.gravity);
+        Vec3 gravity_vec(0.0, 0.0, params_.mass * params_.gravity);
 
         // Translational dynamics (NED frame)
-        Vec3 accel = (thrust_ned + drag) / params_.mass + gravity_ned / params_.mass;
+        Vec3 accel = (thrust_ned + drag) / params_.mass + gravity_vec / params_.mass;
 
         // Update velocity and position
         state_.velocity += accel * dt;

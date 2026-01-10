@@ -62,10 +62,10 @@ protected:
         // In static/hover: accelerometer reads -g in body frame
         
         Mat3 R_bn = true_state.R_bn();
-        Vec3 gravity_ned(0.0, 0.0, 9.81);
+        Vec3 gravity_vec(0.0, 0.0, 9.81);
         
         // Specific force (what accelerometer measures)
-        Vec3 specific_force = R_bn * (-gravity_ned);
+        Vec3 specific_force = R_bn * (-gravity_vec);
         
         Vec3 accel_noise(
             gaussian_noise(noise_params_.accel_noise_stddev),

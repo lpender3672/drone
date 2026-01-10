@@ -30,12 +30,15 @@ enum NomIdx {
     NOM_BBARO = 16
 };
 
-class EKF16d : public EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE> {
+class EKF16d : public EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>,
+               public shared::IObserver<shared::StateWithBiases> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     explicit EKF16d(const EkfErrorParameters& p);
 
+    // === IEKF interface (low-level updates with covariances) ===
+    
     // Prediction Step [Source: 282]
     void predict(const ImuMeasurement& imu, double dt) override;
 
@@ -44,6 +47,16 @@ public:
     void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) override;
     void update_barometer(double altitude, double R_var) override;
     void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R) override;
+
+    // === IObserver interface (high-level sensor feed) ===
+    
+    void feed_imu(const sensors::ImuMeasurement& imu) override;
+    void feed_mag(const sensors::MagMeasurement& mag) override;
+    void feed_baro(const sensors::BaroMeasurement& baro) override;
+    void feed_gnss(const sensors::GnssMeasurement& gnss) override;
+    
+    shared::StateWithBiases output() const override;
+    void reset(const shared::StateWithBiases& initial) override;
 
     void (*debugCallback)(const char* label) = nullptr;
 
@@ -79,6 +92,11 @@ private:
     Eigen::Vector3d tau_a_;           // Accel bias correlation time [s]
     Eigen::Vector3d tau_g_;           // Gyro bias correlation time [s]
     double tau_bbaro_;               // Baro bias correlation time [s]
+    
+    // Cached sensor data for output() 
+    Eigen::Vector3d last_omega_ = Eigen::Vector3d::Zero();  // From last IMU feed
+    double last_imu_dt_ = 0.01;                              // Time since last predict
+    uint32_t last_imu_timestamp_us_ = 0;
 
     // Helpers
     void inject_error(const ErrorVector& dx);

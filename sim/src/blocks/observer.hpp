@@ -3,35 +3,58 @@
 #include "../core/block.hpp"
 #include "../data/state.hpp"
 #include "../data/sensor_reading.hpp"
+#include "../../../shared/observer.h"
 
 namespace sim {
 
 /**
- * Interface for state observer/estimator blocks.
- * Takes sensor readings, outputs estimated state.
+ * Base class for state observer/estimator blocks in simulation.
+ * 
+ * Inherits from:
+ *   - Block: for sim scheduling and output callbacks
+ *   - shared::IObserver<State>: for unified observer interface
  * 
  * Implementations range from pass-through (for BNO055) to full EKF.
  */
-class Observer : public Block {
+class Observer : public Block, public shared::IObserver<State> {
 public:
     Observer(const std::string& name, double update_rate_hz)
         : Block(name, update_rate_hz)
     {}
 
-    // Feed sensor readings - observers pick what they need
-    virtual void feed_imu(const ImuReading& reading) { (void)reading; }
+    // === shared::IObserver interface ===
+    
+    void feed_imu(const sensors::ImuMeasurement& imu) override {
+        // Default: subclasses override as needed
+        (void)imu;
+    }
+    
+    void feed_mag(const sensors::MagMeasurement& mag) override { (void)mag; }
+    void feed_baro(const sensors::BaroMeasurement& baro) override { (void)baro; }
+    void feed_gnss(const sensors::GnssMeasurement& gnss) override { (void)gnss; }
+    
+    State output() const override { return estimated_state_; }
+    
+    void reset(const State& initial) override {
+        estimated_state_ = initial;
+    }
+    
+    // === Sim-specific sensor feeds (use sim reading wrappers) ===
+    
+    virtual void feed_imu(const ImuReading& reading) { 
+        feed_imu(reading.data);  // Delegate to IObserver interface
+    }
     virtual void feed_attitude(const AttitudeReading& reading) { (void)reading; }
     virtual void feed_gps(const GpsReading& reading) { (void)reading; }
-    virtual void feed_baro(const BaroReading& reading) { (void)reading; }
-    virtual void feed_mag(const MagReading& reading) { (void)reading; }
-
-    // Get current state estimate
-    const State& estimated_state() const { return estimated_state_; }
-
-    // Reset observer state
-    virtual void reset(const State& initial_estimate) {
-        estimated_state_ = initial_estimate;
+    virtual void feed_baro(const BaroReading& reading) { 
+        feed_baro(reading.data);  // BaroReading wraps sensors::BaroMeasurement
     }
+    virtual void feed_mag(const MagReading& reading) {
+        feed_mag(reading.data);  // MagReading wraps sensors::MagMeasurement
+    }
+
+    // Legacy accessor (prefer output())
+    const State& estimated_state() const { return estimated_state_; }
 
 protected:
     State estimated_state_;

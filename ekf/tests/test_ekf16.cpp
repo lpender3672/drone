@@ -37,7 +37,7 @@ protected:
         ekf.initialize(x0, P0);
     }
 public:
-    Ekf16Tests() : ekf(DEFAULT_PARAMS)
+    Ekf16Tests() : ekf(SENSE_HAT_DATA_PARAMS)
     {
     }
 };
