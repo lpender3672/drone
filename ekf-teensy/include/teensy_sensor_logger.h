@@ -1,6 +1,7 @@
-#ifndef SENSOR_BASE_H
-#define SENSOR_BASE_H
+#ifndef TEENSY_SENSOR_LOGGER_H
+#define TEENSY_SENSOR_LOGGER_H
 
+#include <sensor_base.h>
 #include <Arduino.h>
 #include <SD.h>
 #include <string.h>
@@ -21,17 +22,24 @@
 #endif
 #endif
 
-class SensorBase {
+namespace sensors {
+
+/**
+ * Teensy-specific sensor logger base class.
+ * Provides SD card logging functionality for Teensy platform sensors.
+ * This is a mixin class that adds logging capabilities without inheriting from SensorBase.
+ */
+class TeensySensorLogger {
 protected:
-    const char* name_;
-    uint32_t interval_ms_;
-    uint32_t last_update_time_ = 0;
-    uint32_t next_due_ms_ = 0;
+    const char* name_ = nullptr;
+    uint32_t interval_us_ = 0;
+    uint32_t next_due_us_ = 0;
+    uint32_t last_update_us_ = 0;
     bool has_next_due_ = false;
+    
     uint32_t last_exec_us_ = 0;
     uint32_t max_exec_us_ = 0;
     uint32_t timing_start_ = 0;
-
     uint32_t updates_since_report_ = 0;
 
     File log_file_;
@@ -63,7 +71,7 @@ protected:
         }
 
         if (name_[0] == '/') {
-            // Treat name_ as explicit reminder path.
+            // Treat name_ as explicit path.
             snprintf(out, out_len, "%s", name_);
             return;
         }
@@ -133,7 +141,6 @@ protected:
 
         // If this record won't fit, flush buffered bytes first.
         if (record_bytes > LOG_BUFFER_BYTES) {
-            // Should never happen with the current header + SENSORBASE_SAVE_MAX_BYTES cap.
             flushLogBuffer(true);
             log_file_.write(reinterpret_cast<const uint8_t*>(&hdr), sizeof(hdr));
             if (write_len > 0 && data != nullptr) {
@@ -158,7 +165,8 @@ protected:
         }
 
         const uint32_t now_flush_ms = millis();
-        const bool time_to_flush = (flush_interval_ms > 0) && ((now_flush_ms - last_sd_file_flush_ms_) >= flush_interval_ms);
+        const bool time_to_flush = (flush_interval_ms > 0) && 
+                                   ((now_flush_ms - last_sd_file_flush_ms_) >= flush_interval_ms);
         if (flush_each_record || time_to_flush) {
             flushLogBuffer(true);
         }
@@ -169,17 +177,33 @@ protected:
         saveBytesIfEnabled(now_ms, &value, sizeof(T));
     }
 
+    void markUpdated(uint32_t now_us) {
+        last_update_us_ = now_us;
+
+        if (!has_next_due_) {
+            has_next_due_ = true;
+            next_due_us_ = now_us + interval_us_;
+        } else {
+            // Keep a stable cadence based on the prior deadline.
+            // If we missed deadlines, skip ahead until the next one is in the future.
+            do {
+                next_due_us_ += interval_us_;
+            } while (static_cast<int32_t>(now_us - next_due_us_) >= 0);
+        }
+
+        updates_since_report_++;
+    }
+
 public:
     bool save_to_sd = false;
     bool flush_each_record = false;
     uint32_t flush_interval_ms = 1000;
     bool overwrite_on_start = true;
 
-    SensorBase(const char* name, uint32_t interval_ms) : name_(name), interval_ms_(interval_ms) {}
-    virtual ~SensorBase() = default;
+    TeensySensorLogger(const char* name, uint32_t interval_us)
+        : name_(name), interval_us_(interval_us), next_due_us_(0) {}
 
-    virtual bool initialize() = 0;
-    virtual void update() = 0;
+    virtual ~TeensySensorLogger() = default;
 
     static bool initSd(uint8_t cs_pin = SENSORBASE_SD_DEFAULT_CS) {
         sd_cs_pin_ = cs_pin;
@@ -204,39 +228,24 @@ public:
         flushLogBuffer(true);
     }
 
-    bool shouldUpdate(uint32_t now) const {
-        // Deadline scheduling: do not allow rates above the configured interval.
-        if (!has_next_due_) return true;
-        return static_cast<int32_t>(now - next_due_ms_) >= 0;
-    }
-
-    void markUpdated(uint32_t now) {
-        last_update_time_ = now;
-
-        if (!has_next_due_) {
-            has_next_due_ = true;
-            next_due_ms_ = now + interval_ms_;
-        } else {
-            // Keep a stable cadence based on the prior deadline.
-            // If we missed deadlines, skip ahead until the next one is in the future.
-            do {
-                next_due_ms_ += interval_ms_;
-            } while (static_cast<int32_t>(now - next_due_ms_) >= 0);
-        }
-
-        updates_since_report_++;
-    }
-
     uint32_t consumeUpdatesSinceReport() {
         const uint32_t n = updates_since_report_;
         updates_since_report_ = 0;
         return n;
     }
 
-    const char* name() const { return name_; }
+    bool is_due(uint32_t current_time_us) {
+        if (!has_next_due_) return true;
+        return static_cast<int32_t>(current_time_us - next_due_us_) >= 0;
+    }
+
     uint32_t lastExecUs() const { return last_exec_us_; }
     uint32_t maxExecUs() const { return max_exec_us_; }
-    uint32_t intervalMs() const { return interval_ms_; }
+    
+    // Convert from microseconds to milliseconds for compatibility
+    uint32_t intervalMs() const { return interval_us_ / 1000; }
 };
 
-#endif
+}  // namespace sensors
+
+#endif  // TEENSY_SENSOR_LOGGER_H

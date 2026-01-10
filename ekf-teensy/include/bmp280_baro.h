@@ -1,31 +1,50 @@
-#ifndef SENSOR_BARO_H
-#define SENSOR_BARO_H
+#ifndef EKF_TEENSY_BMP280_BARO_H
+#define EKF_TEENSY_BMP280_BARO_H
 
-#include "sensor_base.h"
+#include "baro_sensor_base.h"
+#include "teensy_sensor_logger.h"
 #include <Adafruit_BMP280.h>
 #include <ekf.h>
-#include <math.h>
 #include <Wire.h>
 
-class BaroSensor : public SensorBase {
+/**
+ * BMP280 barometer sensor implementation for Teensy.
+ * Provides pressure, temperature, and altitude readings.
+ */
+class BMP280Baro : public sensors::BaroSensorBase, public sensors::TeensySensorLogger {
 private:
     IEKF* ekf_;
     double baro_std_ = 1.0;  // meters
     bool ref_set_ = false;
+    bool new_reading_available_ = false;
+    float p0_pa_ = 101325.0f;  // Standard atmospheric pressure
 
     Adafruit_BMP280 bmp_;
-    float p0_pa_ = 101325.0f;
 
-    static double altitudeFromPressurePa(double p_pa, double p0_pa) {
-        // ISA approximation.
-        // h = 44330 * (1 - (p/p0)^(1/5.255))
-        if (p_pa <= 0.0 || p0_pa <= 0.0) return 0.0;
-        return 44330.0 * (1.0 - pow(p_pa / p0_pa, 1.0 / 5.255));
+    // ISA approximation for altitude from pressure
+    // h = 44330 * (1 - (p/p0)^(1/5.255))
+    static float altitudeFromPressurePa(float p_pa, float p0_pa) {
+        if (p_pa <= 0.0f || p0_pa <= 0.0f) return 0.0f;
+        return 44330.0f * (1.0f - powf(p_pa / p0_pa, 1.0f / 5.255f));
     }
 
 public:
-    BaroSensor(IEKF* ekf, uint32_t interval_ms = 50)
-        : SensorBase("Baro", interval_ms), ekf_(ekf) {}
+    BMP280Baro(IEKF* ekf, uint32_t interval_ms = 50)
+        : BaroSensorBase("Baro", interval_ms * 1000),
+          TeensySensorLogger("Baro", interval_ms * 1000),
+          ekf_(ekf) {}
+
+    bool has_new_reading() const override { return new_reading_available_; }
+    
+    void clear_new_reading_flag() override { new_reading_available_ = false; }
+
+    void set_reference_pressure(float pressure_pa) override {
+        p0_pa_ = pressure_pa;
+    }
+
+    bool is_due(uint32_t current_time_us) override {
+        return TeensySensorLogger::is_due(current_time_us);
+    }
 
     bool initialize() override {
         auto read_chip_id = [](uint8_t addr) -> int {
@@ -73,6 +92,7 @@ public:
 
         if (!ok) {
             Serial.println("BMP280 init failed (not found on I2C or wrong wiring/mode)");
+            initialized_ = false;
             return false;
         }
 
@@ -92,16 +112,16 @@ public:
         }
 
         Serial.printf("BMP280 initialized (chip id 0x%02X)\n", bmp_.sensorID());
+        initialized_ = true;
         return true;
     }
 
-    void update() override {
+    void update(uint32_t current_time_us) override {
         startTiming();
-
-        const uint32_t now_ms = millis();
 
         const float p_pa = bmp_.readPressure();
         const float temp_c = bmp_.readTemperature();
+        
         if (p_pa <= 0.0f) {
             endTiming();
             return;
@@ -112,28 +132,42 @@ public:
             ref_set_ = true;
         }
 
-        const double alt_relative = altitudeFromPressurePa(p_pa, p0_pa_);
-        const double R_var = baro_std_ * baro_std_;
+        const float alt_relative = altitudeFromPressurePa(p_pa, p0_pa_);
 
+        // Update the standardized reading structure
+        latest_reading_.timestamp_us = current_time_us;
+        latest_reading_.pressure_pa = p_pa;
+        latest_reading_.temperature_c = temp_c;
+        latest_reading_.altitude_m = alt_relative;
+        latest_reading_.valid = true;
+
+        new_reading_available_ = true;
+
+        // Update EKF
+        const double R_var = baro_std_ * baro_std_;
         ekf_->update_barometer(alt_relative, R_var);
 
-        endTiming();
-
+        // Log data to SD card if enabled
         struct BaroLogSample {
             float alt_relative_m;
             float pressure_pa;
             float temp_c;
             float var;
         } sample;
-        sample.alt_relative_m = static_cast<float>(alt_relative);
+        sample.alt_relative_m = alt_relative;
         sample.pressure_pa = p_pa;
         sample.temp_c = temp_c;
         sample.var = static_cast<float>(R_var);
+
+        endTiming();
+
+        uint32_t now_ms = current_time_us / 1000;
         saveValueIfEnabled(now_ms, sample);
+        markUpdated(current_time_us);
     }
 
     void setBaroStd(double std) { baro_std_ = std; }
     void resetReference() { ref_set_ = false; }
 };
 
-#endif
+#endif  // EKF_TEENSY_BMP280_BARO_H

@@ -2,11 +2,10 @@
 #include <ekf16d.h>
 
 #include <Arduino.h>
-#include "sensor_base.h"
-#include "imu.h"
-#include "gnss.h"
-#include "mag.h"
-#include "baro.h"
+#include "bno055_imu.h"
+#include "bno055_mag.h"
+#include "bmp280_baro.h"
+#include "ublox_gnss.h"
 
 #include "tuned_ekf_params.h"
 
@@ -20,14 +19,14 @@ int freeram() { return (char *)&_heap_end - __brkval; }
 EKF16d* ekf = nullptr;
 
 // Sensor instances
-ImuSensor*  imuSensor;
-GnssSensor* gnssSensor;
-MagSensor*  magSensor;
-BaroSensor* baroSensor;
+BNO055Imu*   imuSensor;
+UbloxGnss*   gnssSensor;
+BNO055Mag*   magSensor;
+BMP280Baro*  baroSensor;
 
 // Sensor array for polymorphic iteration
 constexpr size_t NUM_SENSORS = 3;
-SensorBase* sensors[NUM_SENSORS];
+sensors::SensorBase* sensor_array[NUM_SENSORS];
 
 void ekfDebug(const char* label) {
     Serial.printf("%s - free: %d\n", label, freeram());
@@ -43,18 +42,26 @@ void printTimings() {
     const float window_s = (elapsed_ms > 0) ? (elapsed_ms * 0.001f) : 1.0f;
     
     Serial.println("--- Sensor Timings (us) / Rate (Hz) ---");
-    uint32_t total = 0;
-    for (size_t i = 0; i < NUM_SENSORS; i++) {
-        const uint32_t n = sensors[i]->consumeUpdatesSinceReport();
-        const float hz = n / window_s;
-        Serial.printf("%-6s: last=%5lu  max=%5lu\n", 
-                      sensors[i]->name(),
-                      sensors[i]->lastExecUs(),
-                      sensors[i]->maxExecUs());
-        Serial.printf("        rate=%.1f Hz (%lu/%lu ms)\n", hz, static_cast<unsigned long>(n), static_cast<unsigned long>(elapsed_ms));
-        total += sensors[i]->lastExecUs();
-    }
-    Serial.printf("Total: %lu us\n", total);
+    
+    // IMU
+    const uint32_t imu_n = imuSensor->consumeUpdatesSinceReport();
+    const float imu_hz = imu_n / window_s;
+    Serial.printf("%-6s: last=%5lu  max=%5lu\n", "IMU", imuSensor->lastExecUs(), imuSensor->maxExecUs());
+    Serial.printf("        rate=%.1f Hz (%lu/%lu ms)\n", imu_hz, static_cast<unsigned long>(imu_n), static_cast<unsigned long>(elapsed_ms));
+    
+    // Mag
+    const uint32_t mag_n = magSensor->consumeUpdatesSinceReport();
+    const float mag_hz = mag_n / window_s;
+    Serial.printf("%-6s: last=%5lu  max=%5lu\n", "Mag", magSensor->lastExecUs(), magSensor->maxExecUs());
+    Serial.printf("        rate=%.1f Hz (%lu/%lu ms)\n", mag_hz, static_cast<unsigned long>(mag_n), static_cast<unsigned long>(elapsed_ms));
+    
+    // Baro
+    const uint32_t baro_n = baroSensor->consumeUpdatesSinceReport();
+    const float baro_hz = baro_n / window_s;
+    Serial.printf("%-6s: last=%5lu  max=%5lu\n", "Baro", baroSensor->lastExecUs(), baroSensor->maxExecUs());
+    Serial.printf("        rate=%.1f Hz (%lu/%lu ms)\n", baro_hz, static_cast<unsigned long>(baro_n), static_cast<unsigned long>(elapsed_ms));
+    
+    Serial.printf("Total: %lu us\n", imuSensor->lastExecUs() + magSensor->lastExecUs() + baroSensor->lastExecUs());
 }
 
 Eigen::Vector3d quat_to_euler(const Eigen::Quaterniond& q) {
@@ -101,7 +108,7 @@ void setup() {
     Wire.begin();
     Wire.setClock(400000);
 
-    const bool sd_ok = SensorBase::initSd();
+    const bool sd_ok = sensors::TeensySensorLogger::initSd();
     if (!sd_ok) {
         Serial.println("WARNING: SD init failed; disabling sensor logging");
         Serial.flush();
@@ -120,26 +127,26 @@ void setup() {
     //ekf->debugCallback = ekfDebug;
 
     // Create sensors
-    imuSensor  = new ImuSensor(ekf, 10);   // 100 Hz
+    imuSensor  = new BNO055Imu(ekf, 10);   // 100 Hz
     imuSensor->save_to_sd = sd_ok;
-    gnssSensor = new GnssSensor(ekf, 100); // 10 Hz
+    gnssSensor = new UbloxGnss(ekf, 100);  // 10 Hz
     gnssSensor->save_to_sd = false && sd_ok;
-    magSensor  = new MagSensor(imuSensor->bno(), ekf, 20);  // 50 Hz
+    magSensor  = new BNO055Mag(imuSensor->bno(), ekf, 20);  // 50 Hz
     magSensor->save_to_sd = sd_ok;
-    baroSensor = new BaroSensor(ekf, 50);  // 20 Hz
+    baroSensor = new BMP280Baro(ekf, 50);  // 20 Hz
     baroSensor->save_to_sd = sd_ok;
 
     // Register in array
-    sensors[0] = imuSensor;
-    sensors[1] = magSensor;
-    sensors[2] = baroSensor;
-    //sensors[3] = gnssSensor;
+    sensor_array[0] = imuSensor;
+    sensor_array[1] = magSensor;
+    sensor_array[2] = baroSensor;
+    //sensor_array[3] = gnssSensor;
 
     // Initialize all sensors
     Serial.println("Initializing sensors...");
     for (size_t i = 0; i < NUM_SENSORS; i++) {
-        if (!sensors[i]->initialize()) {
-            Serial.printf("FATAL: %s init failed\n", sensors[i]->name());
+        if (!sensor_array[i]->initialize()) {
+            Serial.printf("FATAL: %s init failed\n", sensor_array[i]->name());
             while (1) delay(1000);
         }
     }
@@ -148,12 +155,11 @@ void setup() {
 }
 
 void loop() {
-    uint32_t now = millis();
+    uint32_t now_us = micros();
 
     for (size_t i = 0; i < NUM_SENSORS; i++) {
-        if (sensors[i]->shouldUpdate(now)) {
-            sensors[i]->update();
-            sensors[i]->markUpdated(now);
+        if (sensor_array[i]->is_due(now_us)) {
+            sensor_array[i]->update(now_us);
         }
     }
 
