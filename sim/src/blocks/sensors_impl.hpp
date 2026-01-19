@@ -1,14 +1,15 @@
 #pragma once
 
 #include "sim_sensor.hpp"
+#include "../data/sensor_reading.hpp"
 
 namespace sim {
-
 /**
  * IMU sensor model.
  * Outputs accelerometer and gyroscope readings with noise and bias.
  */
-class ImuSensor : public SimSensor<ImuReading> {
+template<typename TrueStateT>
+class ImuSensor : public SensorBlock<TrueStateT, sensors::ImuReading> {
 public:
     struct NoiseParams {
         // Gyroscope
@@ -23,7 +24,7 @@ public:
     ImuSensor(const std::string& name = "imu", 
               double update_rate_hz = 1000.0, 
               double latency_s = 0.001)
-        : SimSensor<ImuReading>(name, update_rate_hz, latency_s)
+        : SensorBlock<TrueStateT, sensors::ImuReading>(name, update_rate_hz, latency_s)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -34,8 +35,8 @@ public:
     }
 
 protected:
-    ImuReading sample(const State& true_state, double /*current_time_s*/) override {
-        ImuReading reading;
+    sensors::ImuReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
+        sensors::ImuReading reading;
 
         // Random walk on biases
         gyro_bias_ += Vec3(
@@ -87,7 +88,8 @@ private:
  * AHRS sensor model (e.g., BNO055).
  * Outputs attitude quaternion directly with some noise.
  */
-class AhrsSensor : public SimSensor<AttitudeReading> {
+template<typename TrueStateT>
+class AhrsSensor : public SensorBlock<TrueStateT, sensors::AttitudeReading> {
 public:
     struct NoiseParams {
         double attitude_noise_stddev = 0.002;  // [rad] noise on euler angles
@@ -97,14 +99,14 @@ public:
     AhrsSensor(const std::string& name = "ahrs",
                double update_rate_hz = 100.0,
                double latency_s = 0.005)
-        : SimSensor<AttitudeReading>(name, update_rate_hz, latency_s)
+        : SensorBlock<TrueStateT, sensors::AttitudeReading>(name, update_rate_hz, latency_s)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
 
 protected:
-    AttitudeReading sample(const State& true_state, double /*current_time_s*/) override {
-        AttitudeReading reading;
+    sensors::AttitudeReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
+        sensors::AttitudeReading reading;
 
         // Add noise to euler angles then convert back to quaternion
         Vec3 euler = true_state.euler_angles();
@@ -140,7 +142,8 @@ private:
 /**
  * GPS sensor model.
  */
-class GpsSensor : public SimSensor<GpsReading> {
+template<typename TrueStateT>
+class GpsSensor : public SensorBlock<TrueStateT, sensors::GnssReading> {
 public:
     struct NoiseParams {
         double position_stddev = 2.5;    // [m] horizontal position noise
@@ -151,7 +154,7 @@ public:
     GpsSensor(const std::string& name = "gps",
               double update_rate_hz = 10.0,
               double latency_s = 0.1)
-        : SimSensor<GpsReading>(name, update_rate_hz, latency_s)
+        : SensorBlock<TrueStateT, sensors::GnssReading>(name, update_rate_hz, latency_s)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -162,8 +165,8 @@ public:
     }
 
 protected:
-    GpsReading sample(const State& true_state, double /*current_time_s*/) override {
-        GpsReading reading;
+    sensors::GnssReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
+        sensors::GnssReading reading;
 
         // Convert local NED to GPS (simplified, flat earth)
         // 1 degree latitude ≈ 111,139 m

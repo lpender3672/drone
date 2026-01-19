@@ -2,8 +2,6 @@
 
 #include "block.hpp"
 #include "../data/state.hpp"
-#include "../data/control_efforts.hpp"
-#include "../data/reference.hpp"
 #include <vector>
 #include <memory>
 #include <map>
@@ -26,35 +24,13 @@ public:
         std::vector<std::pair<std::string, double>> values;
     };
 
-    void log(const std::string& block_name, const InterBlockData& data) {
+    void log(const std::string& block_name, const IInterBlockData& data) {
         LogEntry entry;
         entry.time = data.timestamp();
         entry.block_name = block_name;
         entry.data_type = data.type_name();
         
-        // Extract values based on type
-        if (data.type_name() == "State") {
-            const auto& s = static_cast<const State&>(data);
-            Vec3 euler = s.euler_angles();
-            entry.values = {
-                {"x", s.position.x()}, {"y", s.position.y()}, {"z", s.position.z()},
-                {"vx", s.velocity.x()}, {"vy", s.velocity.y()}, {"vz", s.velocity.z()},
-                {"roll", euler.x()}, {"pitch", euler.y()}, {"yaw", euler.z()},
-                {"p", s.angular_velocity.x()}, {"q", s.angular_velocity.y()}, {"r", s.angular_velocity.z()},
-                {"qw", s.attitude.w()}, {"qx", s.attitude.x()}, {"qy", s.attitude.y()}, {"qz", s.attitude.z()}
-            };
-        } else if (auto* efforts = dynamic_cast<const ControlEffortsBase*>(&data)) {
-            for (int i = 0; i < efforts->num_channels(); ++i) {
-                entry.values.push_back({"e" + std::to_string(i), efforts->effort(i)});
-            }
-        } else if (data.type_name() == "Reference") {
-            const auto& r = static_cast<const Reference&>(data);
-            entry.values = {
-                {"roll", r.attitude.x()}, {"pitch", r.attitude.y()}, {"yaw", r.attitude.z()},
-                {"thrust", r.thrust}
-            };
-        }
-        // Add more types as needed
+        // TOOD
 
         entries_.push_back(entry);
     }
@@ -124,7 +100,7 @@ public:
     void attach_logger(DataLogger* logger) {
         logger_ = logger;
         for (auto& block : blocks_) {
-            block->add_output_callback([logger](const std::string& name, const InterBlockData& data) {
+            block->add_output_callback([logger](const std::string& name, const IInterBlockData& data) {
                 logger->log(name, data);
             });
         }

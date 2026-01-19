@@ -6,27 +6,24 @@
 
 namespace shared {
 
-// Common Eigen typedefs
 using Vec3 = Eigen::Vector3d;
 using Mat3 = Eigen::Matrix3d;
 using Quat = Eigen::Quaterniond;
 
 /**
- * Base state representation for observer output.
- * Contains the minimal state needed for control.
- * Derived types can add additional fields (e.g., biases for EKF).
+ * Base kinematic state.
+ * Contains minimal state needed for control and estimation.
  */
-struct StateBase {
+struct TrueState {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
-    Vec3 position = Vec3::Zero();           // Position in NED frame [m]
-    Vec3 velocity = Vec3::Zero();           // Velocity in NED frame [m/s]
-    Quat attitude = Quat::Identity();       // Attitude quaternion (body to NED)
-    Vec3 angular_velocity = Vec3::Zero();   // Angular velocity in body frame [rad/s]
+    Vec3 position = Vec3::Zero();
+    Vec3 velocity = Vec3::Zero();
+    Quat attitude = Quat::Identity();
+    Vec3 angular_velocity = Vec3::Zero();
     
-    StateBase() = default;
+    TrueState() = default;
     
-    // Convenience accessors
     double x() const { return position.x(); }
     double y() const { return position.y(); }
     double z() const { return position.z(); }
@@ -39,7 +36,6 @@ struct StateBase {
     double q() const { return angular_velocity.y(); }
     double r() const { return angular_velocity.z(); }
     
-    // Euler angles from quaternion [rad] (roll, pitch, yaw) - ZYX convention
     Vec3 euler_angles() const {
         Mat3 R = attitude.toRotationMatrix();
         double roll = std::atan2(R(2,1), R(2,2));
@@ -48,7 +44,6 @@ struct StateBase {
         return Vec3(roll, pitch, yaw);
     }
     
-    // Set quaternion from Euler angles [rad] (roll, pitch, yaw)
     void set_from_euler(double roll, double pitch, double yaw) {
         attitude = Eigen::AngleAxisd(yaw, Vec3::UnitZ())
                  * Eigen::AngleAxisd(pitch, Vec3::UnitY())
@@ -59,30 +54,26 @@ struct StateBase {
         set_from_euler(rpy.x(), rpy.y(), rpy.z());
     }
     
-    // Rotation matrix from body to NED
     Mat3 R_nb() const { return attitude.toRotationMatrix(); }
-    
-    // Rotation matrix from NED to body
     Mat3 R_bn() const { return attitude.toRotationMatrix().transpose(); }
+    
+    void normalise_quaternion() { attitude.normalize(); }
 };
 
+
 /**
- * Extended state with bias estimates for EKF output.
- * Controller can use base fields; logger/diagnostics can access biases.
+ * Observed state from estimator.
  */
-struct StateWithBiases : public StateBase {
+struct ObservedState : public TrueState {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
-    Vec3 accel_bias = Vec3::Zero();     // Accelerometer bias [m/s^2]
-    Vec3 gyro_bias = Vec3::Zero();      // Gyroscope bias [rad/s]
-    double baro_bias = 0.0;             // Barometer altitude bias [m]
+    bool valid = false;
+    Vec3 accel_bias = Vec3::Zero();
+    Vec3 gyro_bias = Vec3::Zero();
+    double baro_bias = 0.0;
     
-    StateWithBiases() = default;
-    
-    // Construct from base state (biases remain zero)
-    explicit StateWithBiases(const StateBase& base)
-        : StateBase(base)
-    {}
+    ObservedState() = default;
+    explicit ObservedState(const TrueState& base) : TrueState(base), valid(true) {}
 };
 
 } // namespace shared

@@ -17,7 +17,7 @@ namespace shared {
  * In sim, concrete observers also inherit from Block to get scheduling.
  * In embedded, observers are called directly from sensor callbacks.
  */
-template<typename StateT>
+template<typename ObservedStateT>
 class IObserver {
 public:
     virtual ~IObserver() = default;
@@ -37,17 +37,17 @@ public:
      * The output() method is const - it should not modify filter state.
      * State mutations happen only in feed_*() and predict/update steps.
      */
-    virtual StateT output() const = 0;
+    virtual ObservedStateT output() const = 0;
     
     /**
      * Reset observer to initial state.
      */
-    virtual void reset(const StateT& initial) = 0;
+    virtual void reset(const ObservedStateT& initial) = 0;
 };
 
 // Common instantiations
-using IObserverBase = IObserver<StateBase>;
-using IObserverWithBiases = IObserver<StateWithBiases>;
+using IObserverBase = IObserver<TrueState>;
+using IObserverWithBiases = IObserver<ObservedState>;
 
 } // namespace shared
 

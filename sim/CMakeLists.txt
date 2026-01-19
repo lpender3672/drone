@@ -1,13 +1,17 @@
 cmake_minimum_required(VERSION 3.14)
-project(quad_sim VERSION 0.1.0 LANGUAGES CXX)
+include(FetchContent)
+project(drone_sim VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Find Eigen
-find_package(Eigen3 3.3 REQUIRED NO_MODULE)
-
+FetchContent_Declare(
+  eigen
+  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen
+)
+FetchContent_MakeAvailable(eigen)
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
 

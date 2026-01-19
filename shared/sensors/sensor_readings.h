@@ -1,79 +1,159 @@
 #ifndef SHARED_SENSOR_READINGS_H
 #define SHARED_SENSOR_READINGS_H
 
-#include <Eigen/Dense>
 #include <cstdint>
+#include <Eigen/Dense>
 
 namespace sensors {
 
-// Common Eigen typedefs
 using Vec3 = Eigen::Vector3d;
-using Mat3 = Eigen::Matrix3d;
 
 /**
- * Standardized IMU measurement structure.
- * Used across all platforms (sim, teensy, ekf).
+ * IMU measurement: [acc(3), gyro(3), timestamp, valid] = 8 elements
  */
 struct ImuMeasurement {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
-    uint32_t timestamp_us = 0;  // Timestamp in microseconds
-    Vec3 acc = Vec3::Zero();    // Specific force [m/s^2] in body frame
-    Vec3 gyro = Vec3::Zero();   // Angular rate [rad/s] in body frame
+    static constexpr int DataSize = 8;
+    
+    uint32_t timestamp_us = 0;
+    Vec3 acc = Vec3::Zero();
+    Vec3 gyro = Vec3::Zero();
     bool valid = false;
+
+    // Pack to flat array for interblock data
+    void to_array(double* data) const {
+        data[0] = acc.x();
+        data[1] = acc.y();
+        data[2] = acc.z();
+        data[3] = gyro.x();
+        data[4] = gyro.y();
+        data[5] = gyro.z();
+        data[6] = static_cast<double>(timestamp_us);
+        data[7] = valid ? 1.0 : 0.0;
+    }
+
+    // Unpack from flat array
+    void from_array(const double* data) {
+        acc.x() = data[0];
+        acc.y() = data[1];
+        acc.z() = data[2];
+        gyro.x() = data[3];
+        gyro.y() = data[4];
+        gyro.z() = data[5];
+        timestamp_us = static_cast<uint32_t>(data[6]);
+        valid = data[7] > 0.5;
+    }
 };
 
 /**
- * Standardized magnetometer measurement structure.
- * Used across all platforms.
+ * Magnetometer measurement: [field(3), timestamp, valid] = 5 elements
  */
 struct MagMeasurement {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
-    uint32_t timestamp_us = 0;  // Timestamp in microseconds
-    Vec3 field = Vec3::Zero();  // Magnetic field [uT] in body frame
+    static constexpr int DataSize = 5;
+    
+    uint32_t timestamp_us = 0;
+    Vec3 field = Vec3::Zero();
     bool valid = false;
+
+    void to_array(double* data) const {
+        data[0] = field.x();
+        data[1] = field.y();
+        data[2] = field.z();
+        data[3] = static_cast<double>(timestamp_us);
+        data[4] = valid ? 1.0 : 0.0;
+    }
+
+    void from_array(const double* data) {
+        field.x() = data[0];
+        field.y() = data[1];
+        field.z() = data[2];
+        timestamp_us = static_cast<uint32_t>(data[3]);
+        valid = data[4] > 0.5;
+    }
 };
 
 /**
- * Standardized GNSS measurement structure.
- * Used across all platforms.
+ * Barometer measurement: [pressure, temperature, altitude, timestamp, valid] = 5 elements
+ */
+struct BaroMeasurement {
+    static constexpr int DataSize = 5;
+    
+    uint32_t timestamp_us = 0;
+    double pressure_pa = 101325.0;
+    double temperature_c = 25.0;
+    double altitude_m = 0;
+    bool valid = false;
+
+    void to_array(double* data) const {
+        data[0] = pressure_pa;
+        data[1] = temperature_c;
+        data[2] = altitude_m;
+        data[3] = static_cast<double>(timestamp_us);
+        data[4] = valid ? 1.0 : 0.0;
+    }
+
+    void from_array(const double* data) {
+        pressure_pa = data[0];
+        temperature_c = data[1];
+        altitude_m = data[2];
+        timestamp_us = static_cast<uint32_t>(data[3]);
+        valid = data[4] > 0.5;
+    }
+};
+
+/**
+ * GNSS measurement: [lat, lon, alt, vel(3), fix, sats, hdop, vdop, timestamp, valid] = 12 elements
  */
 struct GnssMeasurement {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
-    uint32_t timestamp_us = 0;  // Timestamp in microseconds
+    static constexpr int DataSize = 12;
     
-    // Position in LLA
-    double latitude_deg = 0;    // [degrees]
-    double longitude_deg = 0;   // [degrees]
-    double altitude_m = 0;      // [meters] above MSL
-    
-    // Velocity in NED frame [m/s]
+    uint32_t timestamp_us = 0;
+    double latitude_deg = 0;
+    double longitude_deg = 0;
+    double altitude_m = 0;
     Vec3 velocity_ned = Vec3::Zero();
-    
-    // Quality indicators
-    uint8_t fix_type = 0;       // 0=no fix, 2=2D, 3=3D
+    uint8_t fix_type = 0;
     uint8_t num_satellites = 0;
-    float hdop = 99.9f;         // Horizontal dilution of precision
-    float vdop = 99.9f;         // Vertical dilution of precision
-    
+    float hdop = 99.9f;
+    float vdop = 99.9f;
     bool valid = false;
+
+    void to_array(double* data) const {
+        data[0] = latitude_deg;
+        data[1] = longitude_deg;
+        data[2] = altitude_m;
+        data[3] = velocity_ned.x();
+        data[4] = velocity_ned.y();
+        data[5] = velocity_ned.z();
+        data[6] = static_cast<double>(fix_type);
+        data[7] = static_cast<double>(num_satellites);
+        data[8] = static_cast<double>(hdop);
+        data[9] = static_cast<double>(vdop);
+        data[10] = static_cast<double>(timestamp_us);
+        data[11] = valid ? 1.0 : 0.0;
+    }
+
+    void from_array(const double* data) {
+        latitude_deg = data[0];
+        longitude_deg = data[1];
+        altitude_m = data[2];
+        velocity_ned.x() = data[3];
+        velocity_ned.y() = data[4];
+        velocity_ned.z() = data[5];
+        fix_type = static_cast<uint8_t>(data[6]);
+        num_satellites = static_cast<uint8_t>(data[7]);
+        hdop = static_cast<float>(data[8]);
+        vdop = static_cast<float>(data[9]);
+        timestamp_us = static_cast<uint32_t>(data[10]);
+        valid = data[11] > 0.5;
+    }
 };
 
-/**
- * Standardized barometer measurement structure.
- * Used across all platforms.
- */
-struct BaroMeasurement {
-    uint32_t timestamp_us = 0;      // Timestamp in microseconds
-    double pressure_pa = 101325.0;  // [Pa]
-    double temperature_c = 25.0;    // [°C]
-    double altitude_m = 0;          // [meters] derived from pressure
-    bool valid = false;
-};
-
-// Type aliases for backward compatibility
 using ImuReading = ImuMeasurement;
 using MagReading = MagMeasurement;
 using GnssReading = GnssMeasurement;

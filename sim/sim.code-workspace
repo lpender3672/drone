@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../shared"
+		},
+		{
+			"path": "../ekf/shared"
+		}
+	],
+	"settings": {}
+}

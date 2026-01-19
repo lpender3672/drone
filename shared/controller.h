@@ -1,10 +1,6 @@
 #ifndef SHARED_CONTROLLER_H
 #define SHARED_CONTROLLER_H
 
-#include "types/state.h"
-#include "types/control.h"
-#include "types/reference.h"
-
 namespace shared {
 
 /**
@@ -49,43 +45,6 @@ public:
      */
     virtual void reset() = 0;
 };
-
-/**
- * Base controller implementation with state storage.
- * Provides default implementations for IController interface.
- * 
- * Derived classes override compute() to implement control logic.
- * In sim, also inherit from Block for scheduling.
- */
-template<typename StateT, typename RefT, typename ControlT>
-class ControllerBase : public IController<StateT, RefT, ControlT> {
-public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
-    ControllerBase() = default;
-    virtual ~ControllerBase() = default;
-    
-    void set_state(const StateT& state) override { state_ = state; }
-    void set_reference(const RefT& ref) override { reference_ = ref; }
-    const ControlT& output() const override { return control_output_; }
-    
-    void reset() override {
-        control_output_ = ControlT{};
-    }
-    
-    // compute() must be implemented by derived classes
-    // void compute(double dt) override;
-    
-    // Accessors for derived classes
-    const StateT& state() const { return state_; }
-    const RefT& reference() const { return reference_; }
-    
-protected:
-    StateT state_;
-    RefT reference_;
-    ControlT control_output_;
-};
-
 
 } // namespace shared
 

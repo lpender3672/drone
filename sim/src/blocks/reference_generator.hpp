@@ -1,114 +1,139 @@
 #pragma once
 
 #include "../core/block.hpp"
-#include "../data/reference.hpp"
 #include <functional>
+#include <cmath>
 
 namespace sim {
 
 /**
- * Generates reference/setpoint signals for testing.
- * Can produce step, ramp, sinusoidal, or custom signals.
+ * Generates scalar reference signals for testing.
  */
-class ReferenceGenerator : public Block {
+class ScalarReferenceGenerator : public TypedBlock<NoInput, Scalar> {
 public:
     enum class SignalType {
         CONSTANT,
         STEP,
         RAMP,
         SINUSOID,
+        SQUARE,
         CUSTOM
     };
 
-    ReferenceGenerator(const std::string& name = "reference_generator")
-        : Block(name, 0.0)  // Updates every call
+    ScalarReferenceGenerator(const std::string& name, double update_rate_hz = 0.0)
+        : TypedBlock(name, "none", "reference", update_rate_hz)
     {}
 
-    // Get current reference
-    const Reference& reference() const { return reference_; }
-
-    // Set constant reference
-    void set_constant(const Reference& ref) {
+    void set_constant(double value) {
         signal_type_ = SignalType::CONSTANT;
-        reference_ = ref;
+        constant_value_ = value;
     }
 
-    // Set step input
-    void set_step(double step_time, const Reference& before, const Reference& after) {
+    void set_step(double step_time, double before, double after) {
         signal_type_ = SignalType::STEP;
         step_time_ = step_time;
-        ref_before_ = before;
-        ref_after_ = after;
+        step_before_ = before;
+        step_after_ = after;
     }
 
-    // Set sinusoidal roll/pitch/yaw with given amplitude and frequency
-    void set_sinusoid(double amplitude_rad, double frequency_hz, 
-                      bool roll = true, bool pitch = false, bool yaw = false,
-                      double base_thrust = 0.5) {
+    void set_ramp(double start_time, double start_value, double slope) {
+        signal_type_ = SignalType::RAMP;
+        ramp_start_time_ = start_time;
+        ramp_start_value_ = start_value;
+        ramp_slope_ = slope;
+    }
+
+    void set_sinusoid(double amplitude, double frequency_hz, 
+                      double offset = 0.0, double phase_rad = 0.0) {
         signal_type_ = SignalType::SINUSOID;
-        sin_amplitude_ = amplitude_rad;
+        sin_amplitude_ = amplitude;
         sin_frequency_ = frequency_hz;
-        sin_axes_ = Vec3(roll ? 1.0 : 0.0, pitch ? 1.0 : 0.0, yaw ? 1.0 : 0.0);
-        reference_.thrust = base_thrust;
+        sin_offset_ = offset;
+        sin_phase_ = phase_rad;
     }
 
-    // Set custom function: f(time) -> Reference
-    void set_custom(std::function<Reference(double)> fn) {
+    void set_square(double amplitude, double frequency_hz, double offset = 0.0) {
+        signal_type_ = SignalType::SQUARE;
+        square_amplitude_ = amplitude;
+        square_frequency_ = frequency_hz;
+        square_offset_ = offset;
+    }
+
+    void set_custom(std::function<double(double)> fn) {
         signal_type_ = SignalType::CUSTOM;
         custom_fn_ = std::move(fn);
     }
 
     bool update(double current_time_s) override {
+        if (!is_due(current_time_s)) return false;
+        mark_updated(current_time_s);
+
+        double value = 0.0;
+
         switch (signal_type_) {
             case SignalType::CONSTANT:
-                // reference_ already set
+                value = constant_value_;
                 break;
 
             case SignalType::STEP:
-                reference_ = (current_time_s < step_time_) ? ref_before_ : ref_after_;
+                value = (current_time_s < step_time_) ? step_before_ : step_after_;
                 break;
 
             case SignalType::RAMP:
-                // TODO: implement ramp
+                if (current_time_s < ramp_start_time_) {
+                    value = ramp_start_value_;
+                } else {
+                    value = ramp_start_value_ + ramp_slope_ * (current_time_s - ramp_start_time_);
+                }
                 break;
 
             case SignalType::SINUSOID: {
-                double phase = 2.0 * M_PI * sin_frequency_ * current_time_s;
-                double value = sin_amplitude_ * std::sin(phase);
-                reference_.attitude = sin_axes_ * value;
+                double phase = 2.0 * M_PI * sin_frequency_ * current_time_s + sin_phase_;
+                value = sin_offset_ + sin_amplitude_ * std::sin(phase);
+                break;
+            }
+
+            case SignalType::SQUARE: {
+                double period = 1.0 / square_frequency_;
+                double t_mod = std::fmod(current_time_s, period);
+                value = square_offset_ + ((t_mod < period / 2.0) ? square_amplitude_ : -square_amplitude_);
                 break;
             }
 
             case SignalType::CUSTOM:
                 if (custom_fn_) {
-                    reference_ = custom_fn_(current_time_s);
+                    value = custom_fn_(current_time_s);
                 }
                 break;
         }
 
-        reference_.set_timestamp(current_time_s);
-        mark_updated(current_time_s);
-        notify_output(reference_);
-
+        output_.value = Scalar(value, current_time_s);
         return true;
     }
 
 private:
     SignalType signal_type_ = SignalType::CONSTANT;
-    Reference reference_;
 
-    // Step parameters
+    double constant_value_ = 0.0;
+
     double step_time_ = 0.0;
-    Reference ref_before_;
-    Reference ref_after_;
+    double step_before_ = 0.0;
+    double step_after_ = 0.0;
 
-    // Sinusoid parameters
+    double ramp_start_time_ = 0.0;
+    double ramp_start_value_ = 0.0;
+    double ramp_slope_ = 0.0;
+
     double sin_amplitude_ = 0.0;
     double sin_frequency_ = 0.0;
-    Vec3 sin_axes_ = Vec3::Zero();
+    double sin_offset_ = 0.0;
+    double sin_phase_ = 0.0;
 
-    // Custom function
-    std::function<Reference(double)> custom_fn_;
+    double square_amplitude_ = 0.0;
+    double square_frequency_ = 0.0;
+    double square_offset_ = 0.0;
+
+    std::function<double(double)> custom_fn_;
 };
 
 } // namespace sim
