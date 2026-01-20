@@ -7,7 +7,7 @@
 
 
 namespace sim {
-
+namespace quadcopter {
 
 /**
  * Motor efforts: [m1, m2, m3, m4]
@@ -43,4 +43,20 @@ public:
 
 // default true and observed state types
 
+
+
+class TrueState : public shared::TrueState, public InterBlockData<13> {
+public:
+    TrueState() = default;
+
+    std::string type_name() const override { return "TrueState"; }
+};
+class ObservedState : public shared::ObservedState, public InterBlockData<17> {
+public:
+    ObservedState() = default;
+
+    std::string type_name() const override { return "ObservedState"; }
+};
+
+} // namespace quadcopter
 } // namespace sim

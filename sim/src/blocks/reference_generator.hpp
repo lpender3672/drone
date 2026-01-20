@@ -20,8 +20,8 @@ public:
         CUSTOM
     };
 
-    ScalarReferenceGenerator(const std::string& name, double update_rate_hz = 0.0)
-        : TypedBlock(name, "none", "reference", update_rate_hz)
+    ScalarReferenceGenerator(const std::string& name, uint32_t update_period_us = 0.0)
+        : TypedBlock(name, "none", "reference", update_period_us)
     {}
 
     void set_constant(double value) {
@@ -64,10 +64,11 @@ public:
         custom_fn_ = std::move(fn);
     }
 
-    bool update(double current_time_s) override {
-        if (!is_due(current_time_s)) return false;
-        mark_updated(current_time_s);
+    bool update(uint64_t current_time_us) override {
+        if (!is_due(current_time_us)) return false;
+        mark_updated(current_time_us);
 
+        double current_time_s = current_time_us / 1e6;
         double value = 0.0;
 
         switch (signal_type_) {
@@ -107,7 +108,7 @@ public:
                 break;
         }
 
-        output_.value = Scalar(value, current_time_s);
+        output_.value = Scalar(value, current_time_us);
         return true;
     }
 

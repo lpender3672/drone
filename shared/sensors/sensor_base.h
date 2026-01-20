@@ -39,7 +39,7 @@ public:
 
     // Check if sensor is due for an update at current_time_us
     // Returns true if enough time has passed since last update
-    bool is_due(uint32_t current_time_us) override {
+    bool is_due(uint64_t current_time_us) override {
         if (!has_next_due_) {
             next_due_us_ = current_time_us + interval_us_;
             has_next_due_ = true;
@@ -54,7 +54,7 @@ public:
     }
 
     // Update the sensor reading (implemented by derived classes)
-    void update(uint32_t current_time_us) override = 0;
+    bool update(uint64_t current_time_us) override = 0;
 
     // Get the latest sensor reading
     // Returns nullopt if no reading is available

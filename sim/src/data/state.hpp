@@ -21,7 +21,7 @@ using Quat = Eigen::Quaterniond;
 class Scalar : public InterBlockData<1> {
 public:
     Scalar() = default;
-    Scalar(double v, double timestamp_s = 0.0) : InterBlockData(timestamp_s) { data_[0] = v; }
+    Scalar(double v, uint64_t timestamp_us = 0) : InterBlockData(timestamp_us) { data_[0] = v; }
 
     double value() const { return data_[0]; }
     void set_value(double v) { data_[0] = v; }
@@ -53,7 +53,7 @@ public:
 class PidInput : public InterBlockData<2> {
 public:
     PidInput() = default;
-    PidInput(double sp, double meas, double timestamp_s = 0.0) : InterBlockData(timestamp_s) {
+    PidInput(double sp, double meas, uint64_t timestamp_us = 0) : InterBlockData(timestamp_us) {
         data_[0] = sp;
         data_[1] = meas;
     }

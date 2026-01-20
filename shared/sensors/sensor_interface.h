@@ -17,10 +17,10 @@ public:
     virtual bool initialize() = 0;
 
     // Check if sensor is due for an update
-    virtual bool is_due(uint32_t current_time_us) = 0;
+    virtual bool is_due(uint64_t current_time_us) = 0;
 
     // Update the sensor reading
-    virtual void update(uint32_t current_time_us) = 0;
+    virtual bool update(uint64_t current_time_us) = 0;
 
     // Get the sensor name
     virtual const char* name() const = 0;

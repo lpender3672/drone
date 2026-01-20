@@ -19,8 +19,8 @@ class Motor : public TypedBlock<Scalar, MotorOutput> {
 public:
     explicit Motor(const std::string& name,
                    const PropellerParams& prop,
-                   double update_rate_hz = 0.0)
-        : TypedBlock(name, "throttle", "output", update_rate_hz)
+                   uint32_t update_period_us = 0.0)
+        : TypedBlock(name, "throttle", "output", update_period_us)
         , prop_(prop) {}
 
     virtual ~Motor() = default;
@@ -47,24 +47,20 @@ public:
     explicit LinearFirstOrderMotor(const std::string& name,
                                    const Params& params,
                                    const PropellerParams& prop,
-                                   double update_rate_hz = 0.0)
-        : Motor(name, prop, update_rate_hz)
+                                   uint32_t update_period_us = 0.0)
+        : Motor(name, prop, update_period_us)
         , params_(params) {}
 
-    bool update(double current_time_s) override {
-        if (!is_due(current_time_s)) return false;
+    bool update(uint64_t current_time_us) override {
+        if (!is_due(current_time_us)) return false;
 
-        double dt = update_period_s_;
-        if (last_update_time_s_ > -1e8) {
-            dt = current_time_s - last_update_time_s_;
-        }
-
-        mark_updated(current_time_s);
+        uint64_t dt_us = get_dt_us(current_time_us);
+        mark_updated(current_time_us);
 
         double throttle = std::clamp(input_.value.value(), 0.0, 1.0);
         double target_omega = throttle * params_.omega_max;
 
-        double alpha = std::exp(-dt / params_.tau);
+        double alpha = std::exp(-dt_us / 1e6 / params_.tau);
         output_.value.set_omega(alpha * output_.value.omega() + (1.0 - alpha) * target_omega);
         
         compute_aero_outputs();
@@ -88,19 +84,16 @@ public:
     explicit NonlinearFirstOrderMotor(const std::string& name,
                                       const Params& params,
                                       const PropellerParams& prop,
-                                      double update_rate_hz = 0.0)
-        : Motor(name, prop, update_rate_hz)
+                                      uint32_t update_period_us = 0.0)
+        : Motor(name, prop, update_period_us)
         , params_(params) {}
 
-    bool update(double current_time_s) override {
-        if (!is_due(current_time_s)) return false;
+    bool update(uint64_t current_time_us) override {
+        if (!is_due(current_time_us)) return false;
 
-        double dt = update_period_s_;
-        if (last_update_time_s_ > -1e8) {
-            dt = current_time_s - last_update_time_s_;
-        }
-
-        mark_updated(current_time_s);
+        uint64_t dt_us = get_dt_us(current_time_us);
+        double dt_s = dt_us / 1e6;
+        mark_updated(current_time_us);
 
         double throttle = std::clamp(input_.value.value(), 0.0, 1.0);
         double v = throttle * params_.v_supply;
@@ -112,7 +105,7 @@ public:
         double aero_torque = k_q_eff * omega * omega;
         double omega_dot = (motor_torque - aero_torque) / params_.J;
 
-        output_.value.set_omega(std::max(0.0, omega + dt * omega_dot));
+        output_.value.set_omega(std::max(0.0, omega + dt_s * omega_dot));
         
         compute_aero_outputs();
         return true;

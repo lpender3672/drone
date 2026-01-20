@@ -9,17 +9,17 @@ namespace sim {
 
 class IInterBlockData {
 public:
-    IInterBlockData() : timestamp_s_(0.0) {}
-    explicit IInterBlockData(double timestamp_s) : timestamp_s_(timestamp_s) {}
+    IInterBlockData() : timestamp_us_(0.0) {}
+    explicit IInterBlockData(uint64_t timestamp_us) : timestamp_us_(timestamp_us) {}
     virtual ~IInterBlockData() = default;
     virtual std::string type_name() const = 0;
 
     // Timestamp
-    double timestamp() const { return timestamp_s_; }
-    void set_timestamp(double t) { timestamp_s_ = t; }
+    uint64_t timestamp() const { return timestamp_us_; }
+    void set_timestamp(uint64_t t) { timestamp_us_ = t; }
 
 protected:
-    double timestamp_s_;
+    uint64_t timestamp_us_;
 };
 
 /**

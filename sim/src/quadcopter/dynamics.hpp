@@ -9,7 +9,7 @@
 namespace sim {
 namespace quadcopter {
 
-class QuadrotorDynamics : public DynamicsBlock<MotorEfforts, shared::TrueState> {
+class QuadrotorDynamics : public DynamicsBlock<MotorEfforts, TrueState> {
 public:
     struct Params {
         double mass = 0.5;
@@ -23,10 +23,10 @@ public:
     };
 
     QuadrotorDynamics(const std::string& name,
-                      double update_rate_hz = 1000.0,
-                      double internal_rate_hz = 10000.0)
-        : DynamicsBlock<MotorEfforts, shared::TrueState>(name, update_rate_hz, internal_rate_hz)
-        , internal_rate_hz_(internal_rate_hz) {}
+                      uint32_t update_period_us = 1000.0,
+                      uint32_t internal_period_us = 10000.0)
+        : DynamicsBlock<MotorEfforts, TrueState>(name, update_period_us, internal_period_us)
+        , internal_period_us_(internal_period_us) {}
 
     void set_params(const Params& params) {
         params_ = params;
@@ -36,14 +36,14 @@ public:
                 name_ + "_motor" + std::to_string(i),
                 params_.motor,
                 params_.propeller,
-                internal_rate_hz_
+                internal_period_us_
             );
         }
     }
     
     Params& params() { return params_; }
 
-    void reset(const shared::TrueState& initial_state) override {
+    void reset(const TrueState& initial_state) override {
         DynamicsBlock::reset(initial_state);
     }
 
@@ -51,7 +51,7 @@ protected:
     void step_dynamics(double dt) override {
         for (int i = 0; i < 4; ++i) {
             motors_[i]->input().set(this->input_.value[i]);
-            motors_[i]->update(this->last_update_time_s_);
+            motors_[i]->update(this->last_update_time_us_);
         }
 
         double thrust[4], torque[4];
@@ -103,7 +103,7 @@ protected:
 
 private:
     Params params_;
-    double internal_rate_hz_;
+    uint32_t internal_period_us_;
     std::array<std::unique_ptr<Motor>, 4> motors_;
 };
 

@@ -9,7 +9,7 @@ namespace sim {
  * Outputs accelerometer and gyroscope readings with noise and bias.
  */
 template<typename TrueStateT>
-class ImuSensor : public SensorBlock<TrueStateT, sensors::ImuReading> {
+class ImuSensor : public SensorBlock<TrueStateT, ImuData> {
 public:
     struct NoiseParams {
         // Gyroscope
@@ -22,9 +22,9 @@ public:
     };
 
     ImuSensor(const std::string& name = "imu", 
-              double update_rate_hz = 1000.0, 
-              double latency_s = 0.001)
-        : SensorBlock<TrueStateT, sensors::ImuReading>(name, update_rate_hz, latency_s)
+              uint32_t update_period_us = 1000, 
+              uint32_t latency_us = 1000)
+        : SensorBlock<TrueStateT, ImuData>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -35,26 +35,26 @@ public:
     }
 
 protected:
-    sensors::ImuReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
-        sensors::ImuReading reading;
+    ImuData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        ImuData reading;
 
         // Random walk on biases
         gyro_bias_ += Vec3(
-            gaussian_noise(noise_params_.gyro_bias_stddev),
-            gaussian_noise(noise_params_.gyro_bias_stddev),
-            gaussian_noise(noise_params_.gyro_bias_stddev)
+            this->gaussian_noise(noise_params_.gyro_bias_stddev),
+            this->gaussian_noise(noise_params_.gyro_bias_stddev),
+            this->gaussian_noise(noise_params_.gyro_bias_stddev)
         );
         accel_bias_ += Vec3(
-            gaussian_noise(noise_params_.accel_bias_stddev),
-            gaussian_noise(noise_params_.accel_bias_stddev),
-            gaussian_noise(noise_params_.accel_bias_stddev)
+            this->gaussian_noise(noise_params_.accel_bias_stddev),
+            this->gaussian_noise(noise_params_.accel_bias_stddev),
+            this->gaussian_noise(noise_params_.accel_bias_stddev)
         );
 
         // Gyroscope: direct measurement of angular velocity + noise + bias
         Vec3 gyro_noise(
-            gaussian_noise(noise_params_.gyro_noise_stddev),
-            gaussian_noise(noise_params_.gyro_noise_stddev),
-            gaussian_noise(noise_params_.gyro_noise_stddev)
+            this->gaussian_noise(noise_params_.gyro_noise_stddev),
+            this->gaussian_noise(noise_params_.gyro_noise_stddev),
+            this->gaussian_noise(noise_params_.gyro_noise_stddev)
         );
         reading.set_gyro(true_state.angular_velocity + gyro_bias_ + gyro_noise);
 
@@ -69,11 +69,11 @@ protected:
         Vec3 specific_force = R_bn * (-gravity_vec);
         
         Vec3 accel_noise(
-            gaussian_noise(noise_params_.accel_noise_stddev),
-            gaussian_noise(noise_params_.accel_noise_stddev),
-            gaussian_noise(noise_params_.accel_noise_stddev)
+            this->gaussian_noise(noise_params_.accel_noise_stddev),
+            this->gaussian_noise(noise_params_.accel_noise_stddev),
+            this->gaussian_noise(noise_params_.accel_noise_stddev)
         );
-        reading.set_accel(specific_force + accel_bias_ + accel_noise);
+        reading.set_acc(specific_force + accel_bias_ + accel_noise);
 
         return reading;
     }
@@ -85,65 +85,10 @@ private:
 };
 
 /**
- * AHRS sensor model (e.g., BNO055).
- * Outputs attitude quaternion directly with some noise.
- */
-template<typename TrueStateT>
-class AhrsSensor : public SensorBlock<TrueStateT, sensors::AttitudeReading> {
-public:
-    struct NoiseParams {
-        double attitude_noise_stddev = 0.002;  // [rad] noise on euler angles
-        double rate_noise_stddev = 0.001;      // [rad/s] noise on rates
-    };
-
-    AhrsSensor(const std::string& name = "ahrs",
-               double update_rate_hz = 100.0,
-               double latency_s = 0.005)
-        : SensorBlock<TrueStateT, sensors::AttitudeReading>(name, update_rate_hz, latency_s)
-    {}
-
-    void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
-
-protected:
-    sensors::AttitudeReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
-        sensors::AttitudeReading reading;
-
-        // Add noise to euler angles then convert back to quaternion
-        Vec3 euler = true_state.euler_angles();
-        Vec3 euler_noise(
-            gaussian_noise(noise_params_.attitude_noise_stddev),
-            gaussian_noise(noise_params_.attitude_noise_stddev),
-            gaussian_noise(noise_params_.attitude_noise_stddev)
-        );
-        euler += euler_noise;
-
-        // Convert back to quaternion (ZYX convention)
-        reading.attitude = Eigen::AngleAxisd(euler.z(), Vec3::UnitZ())
-                         * Eigen::AngleAxisd(euler.y(), Vec3::UnitY())
-                         * Eigen::AngleAxisd(euler.x(), Vec3::UnitX());
-
-        // Angular rates with noise
-        Vec3 rate_noise(
-            gaussian_noise(noise_params_.rate_noise_stddev),
-            gaussian_noise(noise_params_.rate_noise_stddev),
-            gaussian_noise(noise_params_.rate_noise_stddev)
-        );
-        reading.angular_velocity = true_state.angular_velocity + rate_noise;
-
-        reading.calibration_status = 3;  // Fully calibrated
-
-        return reading;
-    }
-
-private:
-    NoiseParams noise_params_;
-};
-
-/**
  * GPS sensor model.
  */
 template<typename TrueStateT>
-class GpsSensor : public SensorBlock<TrueStateT, sensors::GnssReading> {
+class GpsSensor : public SensorBlock<TrueStateT, GnssData> {
 public:
     struct NoiseParams {
         double position_stddev = 2.5;    // [m] horizontal position noise
@@ -152,9 +97,9 @@ public:
     };
 
     GpsSensor(const std::string& name = "gps",
-              double update_rate_hz = 10.0,
-              double latency_s = 0.1)
-        : SensorBlock<TrueStateT, sensors::GnssReading>(name, update_rate_hz, latency_s)
+              uint32_t update_period_us = 100000,
+              uint32_t latency_us = 100000)
+        : SensorBlock<TrueStateT, GnssData>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -165,8 +110,8 @@ public:
     }
 
 protected:
-    sensors::GnssReading sample(const TrueStateT& true_state, double /*current_time_s*/) override {
-        sensors::GnssReading reading;
+    GnssData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        GnssData reading;
 
         // Convert local NED to GPS (simplified, flat earth)
         // 1 degree latitude ≈ 111,139 m
@@ -175,9 +120,9 @@ protected:
         double meters_per_deg_lon = 111139.0 * std::cos(origin_lla_.x() * M_PI / 180.0);
 
         Vec3 pos_noise(
-            gaussian_noise(noise_params_.position_stddev) / meters_per_deg_lat,
-            gaussian_noise(noise_params_.position_stddev) / meters_per_deg_lon,
-            gaussian_noise(noise_params_.altitude_stddev)
+            this->gaussian_noise(noise_params_.position_stddev) / meters_per_deg_lat,
+            this->gaussian_noise(noise_params_.position_stddev) / meters_per_deg_lon,
+            this->gaussian_noise(noise_params_.altitude_stddev)
         );
 
         Vec3 lla_result;
@@ -187,16 +132,16 @@ protected:
         reading.set_lla(lla_result);
 
         Vec3 vel_noise(
-            gaussian_noise(noise_params_.velocity_stddev),
-            gaussian_noise(noise_params_.velocity_stddev),
-            gaussian_noise(noise_params_.velocity_stddev)
+            this->gaussian_noise(noise_params_.velocity_stddev),
+            this->gaussian_noise(noise_params_.velocity_stddev),
+            this->gaussian_noise(noise_params_.velocity_stddev)
         );
         reading.set_velocity_ned(true_state.velocity + vel_noise);
 
-        reading.fix_type() = 3;  // 3D fix
-        reading.num_satellites() = 10;
-        reading.hdop() = 1.0;
-        reading.vdop() = 1.5;
+        reading.set_fix_type(3);  // 3D fix
+        reading.set_num_satellites(10);
+        reading.set_hdop(1.0);
+        reading.set_vdop(1.5);
 
         return reading;
     }

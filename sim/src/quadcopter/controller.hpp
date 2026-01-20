@@ -40,15 +40,15 @@ public:
         return M;
     }
 
-    AttitudePidController(const std::string& name, double update_rate_hz = 1000.0)
+    AttitudePidController(const std::string& name, uint32_t update_period_us = 1000.0)
         : ControllerBlock<shared::ObservedState, AttitudeReference, MotorEfforts>(
-            name, nullptr, update_rate_hz)
+            name, "", "", "", update_period_us)
         , mixer_(default_mixer())
     {
         for (int i = 0; i < 3; ++i) {
             rate_pids_[i] = std::make_unique<PidBlock>(
                 name + "_rate_pid_" + std::to_string(i),
-                update_rate_hz
+                update_period_us
             );
         }
     }
@@ -71,15 +71,15 @@ public:
         }
     }
 
-    bool update(double current_time_s) override {
-        if (!is_due(current_time_s)) return false;
-        mark_updated(current_time_s);
+    bool update(uint64_t current_time_us) override {
+        if (!is_due(current_time_us)) return false;
+        mark_updated(current_time_us);
 
-        const auto& in = input_.value;
-        Vec3 euler = in.state.euler_angles();
+        const auto& in = state_input_.value;
+        Vec3 euler = in.euler_angles();
 
         // Attitude P loop -> rate setpoints
-        Vec3 attitude_error = in.reference.attitude() - euler;
+        Vec3 attitude_error = reference_input_.value.attitude() - euler;
         attitude_error.z() = wrap_angle(attitude_error.z());
 
         Vec3 rate_setpoint = params_.kp_attitude.cwiseProduct(attitude_error);
@@ -91,15 +91,15 @@ public:
         for (int i = 0; i < 3; ++i) {
             PidInput pid_in;
             pid_in.set_setpoint(rate_setpoint[i]);
-            pid_in.set_measurement(in.state.angular_velocity[i]);
+            pid_in.set_measurement(in.angular_velocity[i]);
 
             rate_pids_[i]->input().set(pid_in);
-            rate_pids_[i]->update(current_time_s);
+            rate_pids_[i]->update(current_time_us);
             rate_output[i] = rate_pids_[i]->output().get().value();
         }
 
         // Mix to motor efforts
-        Vec4 control_input(in.reference.thrust(), rate_output.x(), rate_output.y(), rate_output.z());
+        Vec4 control_input(reference_input_.value.thrust(), rate_output.x(), rate_output.y(), rate_output.z());
         output_.value.vector() = mixer_ * control_input;
         //output_.value.clamp();
         //output_.value.set_timestamp(current_time_s);

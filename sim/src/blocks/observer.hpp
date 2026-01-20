@@ -10,14 +10,14 @@ class ObserverBlock : public TypedBlock<SensedStateT, ObservedStateT> {
 public:
     ObserverBlock(const std::string& name,
                   std::unique_ptr<shared::IObserver<ObservedStateT>> observer,
-                  double update_rate_hz)
-        : TypedBlock<SensedStateT, ObservedStateT>(name, "sensors", "state", update_rate_hz)
+                  uint32_t update_period_us)
+        : TypedBlock<SensedStateT, ObservedStateT>(name, "sensors", "state", update_period_us)
         , observer_(std::move(observer))
     {}
 
-    bool update(double current_time_s) override {
-        if (!this->is_due(current_time_s)) return false;
-        this->mark_updated(current_time_s);
+    bool update(uint64_t current_time_us) override {
+        if (!this->is_due(current_time_us)) return false;
+        this->mark_updated(current_time_us);
 
         feed_sensors(this->input_.value);
         this->output_.value = observer_->output();

@@ -34,32 +34,51 @@ struct OutputPort {
 
 class Block {
 public:
-    using OutputCallback = std::function<void(const std::string&, const IInterBlockData&)>;
-    
-    explicit Block(const std::string& name, double update_rate_hz = 0.0)
+    using OutputCallback =
+        std::function<void(const std::string&, const IInterBlockData&)>;
+
+    // update_period_us = 0 → always due
+    explicit Block(const std::string& name,
+                   uint32_t update_period_us = 0)
         : name_(name)
-        , update_rate_hz_(update_rate_hz)
-        , update_period_s_(update_rate_hz > 0.0 ? 1.0 / update_rate_hz : 0.0)
-        , last_update_time_s_(-1e9)
+        , update_period_us_(update_period_us)
+        , last_update_time_us_(0)
+        , has_updated_(false)
     {}
-    
+
     virtual ~Block() = default;
 
-    virtual bool update(double current_time_s) = 0;
+    // current_time_us must be monotonic
+    virtual bool update(uint64_t current_time_us) = 0;
+
+    // Get time delta since last update in microseconds
+    // Returns update_period_us if this is the first update
+    uint64_t get_dt_us(uint64_t current_time_us) const {
+        if (!has_updated_) {
+            return update_period_us_;
+        }
+        return current_time_us - last_update_time_us_;
+    }
 
     const std::string& name() const { return name_; }
-    double update_rate_hz() const { return update_rate_hz_; }
-    double update_period_s() const { return update_period_s_; }
-    
-    bool is_due(double current_time_s) const {
-        if (update_rate_hz_ <= 0.0) return true;
-        return (current_time_s - last_update_time_s_) >= update_period_s_ - 1e-9;
+    uint32_t update_period_us() const { return update_period_us_; }
+
+    bool is_due(uint64_t current_time_us) const {
+        if (update_period_us_ == 0) {
+            return true;
+        }
+
+        if (!has_updated_) {
+            return true;
+        }
+
+        return get_dt_us(current_time_us) >= update_period_us_;
     }
 
     void add_output_callback(OutputCallback cb) {
         output_callbacks_.push_back(std::move(cb));
     }
-    
+
     void clear_callbacks() {
         output_callbacks_.clear();
     }
@@ -70,15 +89,17 @@ protected:
             cb(name_, data);
         }
     }
-    
-    void mark_updated(double current_time_s) {
-        last_update_time_s_ = current_time_s;
+
+    void mark_updated(uint64_t current_time_us) {
+        last_update_time_us_ = current_time_us;
+        has_updated_ = true;
     }
 
     std::string name_;
-    double update_rate_hz_;
-    double update_period_s_;
-    double last_update_time_s_;
+    uint32_t update_period_us_;
+    uint64_t last_update_time_us_;
+    bool has_updated_;
+
     std::vector<OutputCallback> output_callbacks_;
 };
 
@@ -87,19 +108,19 @@ class TypedBlock : public Block {
 public:
     using InputType = TIn;
     using OutputType = TOut;
-    
-    TypedBlock(const std::string& name, 
+
+    TypedBlock(const std::string& name,
                const std::string& input_name,
                const std::string& output_name,
-               double update_rate_hz = 0.0)
-        : Block(name, update_rate_hz)
+               uint32_t update_period_us = 0)
+        : Block(name, update_period_us)
         , input_(input_name)
         , output_(output_name)
     {}
 
     InputPort<TIn>& input() { return input_; }
     const InputPort<TIn>& input() const { return input_; }
-    
+
     OutputPort<TOut>& output() { return output_; }
     const OutputPort<TOut>& output() const { return output_; }
 

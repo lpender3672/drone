@@ -44,6 +44,13 @@ struct ImuMeasurement {
         timestamp_us = static_cast<uint32_t>(data[6]);
         valid = data[7] > 0.5;
     }
+
+    void set_acc(const Vec3& a) {
+        acc = a;
+    }
+    void set_gyro(const Vec3& g) {
+        gyro = g;
+    }
 };
 
 /**
@@ -72,6 +79,10 @@ struct MagMeasurement {
         field.z() = data[2];
         timestamp_us = static_cast<uint32_t>(data[3]);
         valid = data[4] > 0.5;
+    }
+
+    void set_field(const Vec3& f) {
+        field = f;
     }
 };
 
@@ -151,6 +162,27 @@ struct GnssMeasurement {
         vdop = static_cast<float>(data[9]);
         timestamp_us = static_cast<uint32_t>(data[10]);
         valid = data[11] > 0.5;
+    }
+
+    void set_lla(const Vec3& lla) {
+        latitude_deg = lla.x();
+        longitude_deg = lla.y();
+        altitude_m = lla.z();
+    }
+    void set_velocity_ned(const Vec3& vel) {
+        velocity_ned = vel;
+    }
+    void set_fix_type(uint8_t fix) {
+        fix_type = fix;
+    }
+    void set_num_satellites(uint8_t sats) {
+        num_satellites = sats;
+    }
+    void set_hdop(float hd) {
+        hdop = hd;
+    }
+    void set_vdop(float vd) {
+        vdop = vd;
     }
 };
 
