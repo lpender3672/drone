@@ -39,8 +39,8 @@ int main() {
 
     // Sensors
     //auto ahrs = sim.add_block(std::make_unique<AhrsSensor<shared::TrueState>>("ahrs", 100.0, 0.005));
-    auto imu = sim.add_block(std::make_unique<ImuSensor<shared::TrueState>>("imu", 1000.0, 0.001));
-    auto gps = sim.add_block(std::make_unique<GpsSensor<shared::TrueState>>("gps", 10.0, 0.1));
+    auto imu = sim.add_block(std::make_unique<ImuSensor<TrueState>>("imu", 1000.0, 0.001));
+    auto gps = sim.add_block(std::make_unique<GpsSensor<TrueState>>("gps", 10.0, 0.1));
 
     // Observer (passthrough for now - uses AHRS directly)
     //auto observer = sim.add_block(std::make_unique<PassthroughObserver>("observer"));
@@ -59,6 +59,11 @@ int main() {
     dyn_params.propeller.k_q = 2.0e-9;
     dynamics->set_params(dyn_params);
 
-    
+    delete ref_gen;
+    delete controller;
+    delete dynamics;
+    delete imu;
+    delete gps;
+
     return 0;
 }

@@ -75,6 +75,7 @@ protected:
         );
         reading.set_acc(specific_force + accel_bias_ + accel_noise);
 
+        (void)current_time_us;  // Unused
         return reading;
     }
 
@@ -143,6 +144,7 @@ protected:
         reading.set_hdop(1.0);
         reading.set_vdop(1.5);
 
+        (void)current_time_us;  // Unused
         return reading;
     }
 
