@@ -13,29 +13,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(eigen)
 
-# ImGui
-add_library(imgui STATIC
-    imgui/imgui.cpp
-    imgui/imgui_draw.cpp
-    imgui/imgui_tables.cpp
-    imgui/imgui_widgets.cpp
-    imgui/backends/imgui_impl_glfw.cpp
-    imgui/backends/imgui_impl_opengl3.cpp
-)
-target_include_directories(imgui PUBLIC imgui imgui/backends)
-
-find_package(glfw3 REQUIRED)
-find_package(OpenGL REQUIRED)
-target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
-
-# ImPlot
-add_library(implot STATIC
-    implot/implot.cpp
-    implot/implot_items.cpp
-)
-target_include_directories(implot PUBLIC implot)
-target_link_libraries(implot PUBLIC imgui)
-
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
 
@@ -54,7 +31,7 @@ add_executable(quad_sim
     src/main.cpp
 )
 
-target_link_libraries(quad_sim PRIVATE sim_lib implot)
+target_link_libraries(quad_sim PRIVATE sim_lib)
 
 # Optional: Release build optimizations
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

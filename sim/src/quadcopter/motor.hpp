@@ -29,9 +29,12 @@ public:
 
 protected:
     void compute_aero_outputs() {
-        double omega_sq = output_.value.omega() * output_.value.omega();
-        output_.value.set_thrust(prop_.k_t * prop_.rho * omega_sq * std::pow(prop_.d, 4));
-        output_.value.set_torque(prop_.k_q * prop_.rho * omega_sq * std::pow(prop_.d, 5));
+        double omega = output_.value.omega();
+        double omega_sq = omega * omega;
+        double thrust = prop_.k_t * prop_.rho * omega_sq * std::pow(prop_.d, 4);
+        double torque = prop_.k_q * prop_.rho * omega_sq * std::pow(prop_.d, 5);
+        output_.value.set_thrust(thrust);
+        output_.value.set_torque(torque);
     }
 
     PropellerParams prop_;
@@ -60,8 +63,10 @@ public:
         double throttle = std::clamp(input_.value.value(), 0.0, 1.0);
         double target_omega = throttle * params_.omega_max;
 
-        double alpha = std::exp(-dt_us / 1e6 / params_.tau);
-        output_.value.set_omega(alpha * output_.value.omega() + (1.0 - alpha) * target_omega);
+        double dt_s = static_cast<double>(dt_us) / 1e6;
+        double alpha = std::exp(-dt_s / params_.tau);
+        double new_omega = alpha * output_.value.omega() + (1.0 - alpha) * target_omega;
+        output_.value.set_omega(new_omega);
         
         compute_aero_outputs();
         return true;
