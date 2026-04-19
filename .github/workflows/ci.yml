@@ -37,11 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch Eigen
-        run: |
-          wget -q https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-          tar -xzf eigen-3.4.0.tar.gz
-          mv eigen-3.4.0 eigen
+      - name: Install dependencies
+        run: sudo apt-get install -y libeigen3-dev
 
       - name: Configure
         run: cmake -B sim/build -S sim -DCMAKE_BUILD_TYPE=Debug
@@ -53,6 +50,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Fetch Eigen
+        run: |
+          wget -q https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+          tar -xzf eigen-3.4.0.tar.gz
+          mv eigen-3.4.0 eigen
 
       - uses: actions/cache@v4
         with:
