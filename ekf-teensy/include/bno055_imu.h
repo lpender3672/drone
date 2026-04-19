@@ -25,8 +25,8 @@ public:
 
     // Get access to the underlying BNO055 object (for sharing with magnetometer)
 
-    bool is_due(uint32_t current_time_us) override {
-        return TeensySensorLogger::is_due(current_time_us);
+    bool is_due(uint64_t current_time_us) override {
+        return TeensySensorLogger::is_due(static_cast<uint32_t>(current_time_us));
     }
 
     Adafruit_BNO055* bno() { return &bno_; }
@@ -45,7 +45,8 @@ public:
         return true;
     }
 
-    void update(uint32_t current_time_us) override {
+    bool update(uint64_t current_time_us_64) override {
+        uint32_t current_time_us = static_cast<uint32_t>(current_time_us_64);
         startTiming();
 
         sensors_event_t accel, gyro;
@@ -100,6 +101,7 @@ public:
         uint32_t now_ms = current_time_us / 1000;
         saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
+        return true;
     }
 };
 
