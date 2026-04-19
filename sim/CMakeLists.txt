@@ -6,12 +6,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find Eigen
-FetchContent_Declare(
-  eigen
-  SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen
-)
-FetchContent_MakeAvailable(eigen)
+# Find Eigen: prefer system install (CI), fall back to local source tree
+find_package(Eigen3 3.4 QUIET NO_MODULE)
+if(NOT TARGET Eigen3::Eigen)
+  FetchContent_Declare(eigen SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen)
+  FetchContent_MakeAvailable(eigen)
+endif()
 
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
