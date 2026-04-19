@@ -48,7 +48,7 @@ jobs:
       - name: Install Eigen
         run: |
           sudo apt-get install -y libeigen3-dev
-          ln -s /usr/include/eigen3 eigen
+          cp -r /usr/include/eigen3 $GITHUB_WORKSPACE/eigen
 
       - uses: actions/cache@v4
         with:
