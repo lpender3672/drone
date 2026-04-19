@@ -45,11 +45,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch Eigen
+      - name: Install Eigen
         run: |
-          wget -q https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-          tar -xzf eigen-3.4.0.tar.gz
-          mv eigen-3.4.0 eigen
+          sudo apt-get install -y libeigen3-dev
+          ln -s /usr/include/eigen3 eigen
 
       - uses: actions/cache@v4
         with:
