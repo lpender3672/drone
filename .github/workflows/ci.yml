@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build-ekf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Eigen
+        run: |
+          wget -q https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+          tar -xzf eigen-3.4.0.tar.gz
+          mv eigen-3.4.0 eigen
+
+      - name: Configure
+        run: cmake -B ekf/build -S ekf -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build ekf/build
+
+      - name: Test
+        working-directory: ekf/build
+        run: ctest --output-on-failure
+
+  build-sim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Eigen
+        run: |
+          wget -q https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+          tar -xzf eigen-3.4.0.tar.gz
+          mv eigen-3.4.0 eigen
+
+      - name: Configure
+        run: cmake -B sim/build -S sim -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build sim/build
+
+  build-teensy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build Teensy firmware
+        working-directory: ekf-teensy
+        run: pio run -e teensy41
+
+      - name: Test native
+        working-directory: ekf-teensy
+        run: pio test -e native
