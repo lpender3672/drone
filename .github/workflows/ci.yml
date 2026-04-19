@@ -45,10 +45,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Eigen
-        run: |
-          sudo apt-get install -y libeigen3-dev
-          cp -r /usr/include/eigen3 $GITHUB_WORKSPACE/eigen
+      - name: Fetch Eigen
+        run: git clone --depth 1 --branch 3.4.0 https://gitlab.com/libeigen/eigen.git $GITHUB_WORKSPACE/eigen
 
       - uses: actions/cache@v4
         with:
@@ -64,9 +62,17 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      - name: Debug paths
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          ls $GITHUB_WORKSPACE/eigen/Eigen/ | head -5
+          echo "PROJECT_DIR would be: $GITHUB_WORKSPACE/ekf-teensy"
+          echo "Resolved eigen path: $GITHUB_WORKSPACE/ekf-teensy/../eigen"
+          ls $GITHUB_WORKSPACE/ekf-teensy/../eigen/Eigen/ | head -5
+
       - name: Build Teensy firmware
         working-directory: ekf-teensy
-        run: pio run -e teensy41
+        run: pio run -e teensy41 -v 2>&1 | grep -E "^arm-none|error:|Eigen" | head -20
 
       - name: Test native
         working-directory: ekf-teensy
