@@ -20,13 +20,9 @@ private:
 
 public:
     BNO055Mag(Adafruit_BNO055* bno, IEKF* ekf, uint32_t interval_ms = 20)
-        : Sensor<sensors::MagReading>("Mag", interval_ms * 1000),
-          TeensySensorLogger("Mag", interval_ms * 1000),
+        : Sensor<sensors::MagReading>("Mag", (uint64_t)interval_ms * 1000),
+          TeensySensorLogger("Mag"),
           bno_(bno), ekf_(ekf) {}
-
-    bool is_due(uint64_t current_time_us) override {
-        return TeensySensorLogger::is_due(static_cast<uint32_t>(current_time_us));
-    }
 
     bool initialize() override {
         // BNO055 initialized by IMU sensor

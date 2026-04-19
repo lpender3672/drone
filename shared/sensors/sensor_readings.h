@@ -16,7 +16,7 @@ struct ImuMeasurement {
     
     static constexpr int DataSize = 8;
     
-    uint32_t timestamp_us = 0;
+    uint64_t timestamp_us = 0;
     Vec3 acc = Vec3::Zero();
     Vec3 gyro = Vec3::Zero();
     bool valid = false;
@@ -41,7 +41,7 @@ struct ImuMeasurement {
         gyro.x() = data[3];
         gyro.y() = data[4];
         gyro.z() = data[5];
-        timestamp_us = static_cast<uint32_t>(data[6]);
+        timestamp_us = static_cast<uint64_t>(data[6]);
         valid = data[7] > 0.5;
     }
 
@@ -61,7 +61,7 @@ struct MagMeasurement {
     
     static constexpr int DataSize = 5;
     
-    uint32_t timestamp_us = 0;
+    uint64_t timestamp_us = 0;
     Vec3 field = Vec3::Zero();
     bool valid = false;
 
@@ -77,7 +77,7 @@ struct MagMeasurement {
         field.x() = data[0];
         field.y() = data[1];
         field.z() = data[2];
-        timestamp_us = static_cast<uint32_t>(data[3]);
+        timestamp_us = static_cast<uint64_t>(data[3]);
         valid = data[4] > 0.5;
     }
 
@@ -92,7 +92,7 @@ struct MagMeasurement {
 struct BaroMeasurement {
     static constexpr int DataSize = 5;
     
-    uint32_t timestamp_us = 0;
+    uint64_t timestamp_us = 0;
     double pressure_pa = 101325.0;
     double temperature_c = 25.0;
     double altitude_m = 0;
@@ -110,7 +110,7 @@ struct BaroMeasurement {
         pressure_pa = data[0];
         temperature_c = data[1];
         altitude_m = data[2];
-        timestamp_us = static_cast<uint32_t>(data[3]);
+        timestamp_us = static_cast<uint64_t>(data[3]);
         valid = data[4] > 0.5;
     }
 };
@@ -123,7 +123,7 @@ struct GnssMeasurement {
     
     static constexpr int DataSize = 12;
     
-    uint32_t timestamp_us = 0;
+    uint64_t timestamp_us = 0;
     double latitude_deg = 0;
     double longitude_deg = 0;
     double altitude_m = 0;
@@ -160,7 +160,7 @@ struct GnssMeasurement {
         num_satellites = static_cast<uint8_t>(data[7]);
         hdop = static_cast<float>(data[8]);
         vdop = static_cast<float>(data[9]);
-        timestamp_us = static_cast<uint32_t>(data[10]);
+        timestamp_us = static_cast<uint64_t>(data[10]);
         valid = data[11] > 0.5;
     }
 

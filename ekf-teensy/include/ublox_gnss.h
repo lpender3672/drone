@@ -3,14 +3,11 @@
 
 #include <sensor_base.h>
 #include <sensor_readings.h>
+#include <sensor_constants.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <ekf.h>
 
 #include "teensy_sensor_logger.h"
-
-#ifndef DEG_TO_RAD
-constexpr double DEG_TO_RAD = M_PI / 180.0;
-#endif
 
 /**
  * u-blox GNSS sensor implementation for Teensy.
@@ -31,13 +28,9 @@ private:
 
 public:
     UbloxGnss(IEKF* ekf, uint32_t interval_ms = 100)
-        : Sensor<sensors::GnssReading>("GNSS", interval_ms * 1000),
-          TeensySensorLogger("GNSS", interval_ms * 1000),
+        : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000),
+          TeensySensorLogger("GNSS"),
           ekf_(ekf) {}
-
-    bool is_due(uint64_t current_time_us) override {
-        return TeensySensorLogger::is_due(static_cast<uint32_t>(current_time_us));
-    }
 
     bool initialize() override {
         if (!gnss_.begin()) {
@@ -59,13 +52,13 @@ public:
 
         if (!gnss_.getPVT()) {
             endTiming();
-            return;
+            return false;
         }
 
         uint8_t fix = gnss_.getFixType();
         if (fix < 3) {
             endTiming();
-            return;
+            return false;
         }
 
         const double lat = gnss_.getLatitude() * 1e-7;

@@ -2,6 +2,7 @@
 
 #include "sim_sensor.hpp"
 #include "../data/sensor_reading.hpp"
+#include <sensor_constants.h>
 
 namespace sim {
 /**
@@ -63,7 +64,7 @@ protected:
         // In static/hover: accelerometer reads -g in body frame
         
         Mat3 R_bn = true_state.R_bn();
-        Vec3 gravity_vec(0.0, 0.0, 9.81);
+        Vec3 gravity_vec(0.0, 0.0, sensors::GRAVITY_MS2);
         
         // Specific force (what accelerometer measures)
         Vec3 specific_force = R_bn * (-gravity_vec);
@@ -115,10 +116,9 @@ protected:
         GnssData reading;
 
         // Convert local NED to GPS (simplified, flat earth)
-        // 1 degree latitude ≈ 111,139 m
-        // 1 degree longitude ≈ 111,139 * cos(lat) m
-        double meters_per_deg_lat = 111139.0;
-        double meters_per_deg_lon = 111139.0 * std::cos(origin_lla_.x() * M_PI / 180.0);
+        const double lat_rad = origin_lla_.x() * M_PI / 180.0;
+        const double meters_per_deg_lat = sensors::METERS_PER_DEG_LAT;
+        const double meters_per_deg_lon = sensors::meters_per_deg_lon(lat_rad);
 
         Vec3 pos_noise(
             this->gaussian_noise(noise_params_.position_stddev) / meters_per_deg_lat,

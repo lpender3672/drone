@@ -22,6 +22,7 @@ add_library(sim_lib INTERFACE)
 target_include_directories(sim_lib INTERFACE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../shared/sensors
     ${CMAKE_SOURCE_DIR}/../ekf/shared
 )
 

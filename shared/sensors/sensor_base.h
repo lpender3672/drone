@@ -18,16 +18,16 @@ template<typename ReadingType>
 class Sensor : public ISensor {
 protected:
     const char* name_;
-    uint32_t interval_us_;       // Update interval in microseconds
-    uint32_t last_update_us_;    // Last update timestamp
-    uint32_t next_due_us_;       // Next scheduled update
+    uint64_t interval_us_;       // Update interval in microseconds
+    uint64_t last_update_us_;    // Last update timestamp
+    uint64_t next_due_us_;       // Next scheduled update
     bool has_next_due_;
     bool initialized_;
     ReadingType latest_reading_;
     bool new_reading_available_ = false;
 
 public:
-    Sensor(const char* name, uint32_t interval_us)
+    Sensor(const char* name, uint64_t interval_us)
         : name_(name), interval_us_(interval_us), last_update_us_(0),
           next_due_us_(0), has_next_due_(false), initialized_(false) {}
 
@@ -46,8 +46,10 @@ public:
             return true;
         }
 
-        if ((int32_t)(current_time_us - next_due_us_) >= 0) {
-            next_due_us_ += interval_us_;
+        if (current_time_us >= next_due_us_) {
+            do {
+                next_due_us_ += interval_us_;
+            } while (next_due_us_ <= current_time_us);
             return true;
         }
         return false;
@@ -78,15 +80,8 @@ public:
     bool is_initialized() const { return initialized_; }
     void set_initialized(bool init) { initialized_ = init; }
 
-    // Set interval in milliseconds (convenience)
-    void set_interval_ms(uint32_t interval_ms) {
-        interval_us_ = interval_ms * 1000;
-    }
-
-    // Set interval in microseconds
-    void set_interval_us(uint32_t interval_us) {
-        interval_us_ = interval_us;
-    }
+    void set_interval_ms(uint32_t interval_ms) { interval_us_ = (uint64_t)interval_ms * 1000; }
+    void set_interval_us(uint64_t interval_us) { interval_us_ = interval_us; }
 };
 
 }  // namespace sensors

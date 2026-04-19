@@ -30,16 +30,12 @@ private:
 
 public:
     BMP280Baro(IEKF* ekf, uint32_t interval_ms = 50)
-        : Sensor<sensors::BaroReading>("Baro", interval_ms * 1000),
-          TeensySensorLogger("Baro", interval_ms * 1000),
+        : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
+          TeensySensorLogger("Baro"),
           ekf_(ekf) {}
 
     void set_reference_pressure(float pressure_pa) {
         p0_pa_ = pressure_pa;
-    }
-
-    bool is_due(uint64_t current_time_us) override {
-        return TeensySensorLogger::is_due(static_cast<uint32_t>(current_time_us));
     }
 
     bool initialize() override {
