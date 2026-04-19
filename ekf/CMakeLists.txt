@@ -8,9 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Options
 option(BUILD_TESTING "Build unit tests" OFF)
 
-# Find Dependencies
-# Use Eigen3 source directly from submodule
-include_directories(${CMAKE_SOURCE_DIR}/../eigen)
+# Find Eigen: prefer system install (CI), fall back to local source tree
+find_package(Eigen3 QUIET)
+if(Eigen3_FOUND)
+    include_directories(${EIGEN3_INCLUDE_DIR})
+else()
+    include_directories(${CMAKE_SOURCE_DIR}/../eigen)
+endif()
 
 # Platform Detection
 if(WIN32)
