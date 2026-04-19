@@ -3,6 +3,7 @@
 
 #include <sensor_base.h>
 #include <sensor_readings.h>
+#include <sensor_constants.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
 #include <ekf.h>
@@ -15,19 +16,12 @@ class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::T
 private:
     Adafruit_BNO055 bno_;
     IEKF* ekf_;
-    static constexpr double G_ACCEL = 9.80665;
 
 public:
     BNO055Imu(IEKF* ekf, uint32_t interval_ms = 10)
-        : Sensor<sensors::ImuReading>("IMU", interval_ms * 1000), 
-          TeensySensorLogger("IMU", interval_ms * 1000),
+        : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
+          TeensySensorLogger("IMU"),
           bno_(55, 0x28), ekf_(ekf) {}
-
-    // Get access to the underlying BNO055 object (for sharing with magnetometer)
-
-    bool is_due(uint32_t current_time_us) override {
-        return TeensySensorLogger::is_due(current_time_us);
-    }
 
     Adafruit_BNO055* bno() { return &bno_; }
 
@@ -45,7 +39,8 @@ public:
         return true;
     }
 
-    void update(uint32_t current_time_us) override {
+    bool update(uint64_t current_time_us_64) override {
+        uint32_t current_time_us = static_cast<uint32_t>(current_time_us_64);
         startTiming();
 
         sensors_event_t accel, gyro;
@@ -75,7 +70,7 @@ public:
         // Update EKF if valid time step
         if (dt > 0.0f && dt < 0.1f) {
             ImuMeasurement msg;
-            msg.acc = latest_reading_.acc / G_ACCEL;  // Convert to g's for EKF
+            msg.acc = latest_reading_.acc / sensors::GRAVITY_MS2;  // Convert to g's for EKF
             msg.gyro = latest_reading_.gyro;
             // ekf_->predict(msg, dt);  // Uncomment when needed
         }
@@ -87,9 +82,9 @@ public:
             float dt;
         } sample;
 
-        sample.acc_g[0] = accel.acceleration.x / G_ACCEL;
-        sample.acc_g[1] = accel.acceleration.y / G_ACCEL;
-        sample.acc_g[2] = accel.acceleration.z / G_ACCEL;
+        sample.acc_g[0] = accel.acceleration.x / sensors::GRAVITY_MS2;
+        sample.acc_g[1] = accel.acceleration.y / sensors::GRAVITY_MS2;
+        sample.acc_g[2] = accel.acceleration.z / sensors::GRAVITY_MS2;
         sample.gyro_rads[0] = gyro.gyro.x;
         sample.gyro_rads[1] = gyro.gyro.y;
         sample.gyro_rads[2] = gyro.gyro.z;
@@ -100,6 +95,7 @@ public:
         uint32_t now_ms = current_time_us / 1000;
         saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
+        return true;
     }
 };
 

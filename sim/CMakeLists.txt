@@ -21,7 +21,9 @@ add_library(sim_lib INTERFACE)
 
 target_include_directories(sim_lib INTERFACE
     ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/../shared  # For shared sensor headers
+    ${CMAKE_SOURCE_DIR}/../shared
+    ${CMAKE_SOURCE_DIR}/../shared/sensors
+    ${CMAKE_SOURCE_DIR}/../ekf/shared
 )
 
 target_link_libraries(sim_lib INTERFACE Eigen3::Eigen)
@@ -29,6 +31,7 @@ target_link_libraries(sim_lib INTERFACE Eigen3::Eigen)
 # Main executable
 add_executable(quad_sim
     src/main.cpp
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
 )
 
 target_link_libraries(quad_sim PRIVATE sim_lib)

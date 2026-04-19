@@ -32,11 +32,7 @@ namespace sensors {
 class TeensySensorLogger {
 protected:
     const char* name_ = nullptr;
-    uint32_t interval_us_ = 0;
-    uint32_t next_due_us_ = 0;
-    uint32_t last_update_us_ = 0;
-    bool has_next_due_ = false;
-    
+
     uint32_t last_exec_us_ = 0;
     uint32_t max_exec_us_ = 0;
     uint32_t timing_start_ = 0;
@@ -177,20 +173,7 @@ protected:
         saveBytesIfEnabled(now_ms, &value, sizeof(T));
     }
 
-    void markUpdated(uint32_t now_us) {
-        last_update_us_ = now_us;
-
-        if (!has_next_due_) {
-            has_next_due_ = true;
-            next_due_us_ = now_us + interval_us_;
-        } else {
-            // Keep a stable cadence based on the prior deadline.
-            // If we missed deadlines, skip ahead until the next one is in the future.
-            do {
-                next_due_us_ += interval_us_;
-            } while (static_cast<int32_t>(now_us - next_due_us_) >= 0);
-        }
-
+    void markUpdated(uint32_t /*now_us*/) {
         updates_since_report_++;
     }
 
@@ -200,8 +183,7 @@ public:
     uint32_t flush_interval_ms = 1000;
     bool overwrite_on_start = true;
 
-    TeensySensorLogger(const char* name, uint32_t interval_us)
-        : name_(name), interval_us_(interval_us), next_due_us_(0) {}
+    explicit TeensySensorLogger(const char* name) : name_(name) {}
 
     virtual ~TeensySensorLogger() = default;
 
@@ -234,16 +216,8 @@ public:
         return n;
     }
 
-    bool is_due(uint32_t current_time_us) {
-        if (!has_next_due_) return true;
-        return static_cast<int32_t>(current_time_us - next_due_us_) >= 0;
-    }
-
     uint32_t lastExecUs() const { return last_exec_us_; }
     uint32_t maxExecUs() const { return max_exec_us_; }
-    
-    // Convert from microseconds to milliseconds for compatibility
-    uint32_t intervalMs() const { return interval_us_ / 1000; }
 };
 
 }  // namespace sensors

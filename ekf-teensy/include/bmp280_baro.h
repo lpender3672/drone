@@ -30,16 +30,12 @@ private:
 
 public:
     BMP280Baro(IEKF* ekf, uint32_t interval_ms = 50)
-        : Sensor<sensors::BaroReading>("Baro", interval_ms * 1000),
-          TeensySensorLogger("Baro", interval_ms * 1000),
+        : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
+          TeensySensorLogger("Baro"),
           ekf_(ekf) {}
 
     void set_reference_pressure(float pressure_pa) {
         p0_pa_ = pressure_pa;
-    }
-
-    bool is_due(uint32_t current_time_us) override {
-        return TeensySensorLogger::is_due(current_time_us);
     }
 
     bool initialize() override {
@@ -112,7 +108,8 @@ public:
         return true;
     }
 
-    void update(uint32_t current_time_us) override {
+    bool update(uint64_t current_time_us_64) override {
+        uint32_t current_time_us = static_cast<uint32_t>(current_time_us_64);
         startTiming();
 
         const float p_pa = bmp_.readPressure();
@@ -160,6 +157,7 @@ public:
         uint32_t now_ms = current_time_us / 1000;
         saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
+        return true;
     }
 
     void setBaroStd(double std) { baro_std_ = std; }

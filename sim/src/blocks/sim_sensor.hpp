@@ -27,10 +27,10 @@ public:
         if (latency_buffer_.empty()) {
             return std::nullopt;
         }
-        
-        uint64_t current_time = latency_buffer_.back().timestamp_us;
+
+        uint64_t current_time = latency_buffer_.back().timestamp();
         for (const auto& reading : latency_buffer_) {
-            if (current_time - reading.timestamp_us >= latency_us_ - 1) {
+            if (current_time - reading.timestamp() >= latency_us_ - 1) {
                 return reading;
             }
         }
