@@ -9,7 +9,7 @@ protected:
     Eigen::Vector3d p0, v0, ba0, bg0;
     double bb0;
     Eigen::Quaterniond q0;
-    Eigen::Matrix<double, DIM_ERROR, DIM_ERROR> P0;
+    EKF16d::CovMatrix P0;
     
     // Constants for checking results
     const double g_approx = 9.80665;
@@ -23,7 +23,6 @@ protected:
         bg0 = Eigen::Vector3d::Zero();
         bb0 = 0.0;
         
-        EKF16d::CovMatrix P0;
         P0.setIdentity();
         P0.block<3,3>(0,0) *= 1e-6;
         P0.block<3,3>(3,3) *= 0.1;
@@ -33,7 +32,8 @@ protected:
         P0(15,15) *= 0.001;
 
         EKF16d::NominalVector x0;
-        x0 << p0, v0, q0.coeffs(), ba0, bg0, bb0;
+        // EKF stores quaternion as [w,x,y,z]; Eigen coeffs() is scalar-last [x,y,z,w]
+        x0 << p0, v0, q0.w(), q0.x(), q0.y(), q0.z(), ba0, bg0, bb0;
         ekf.initialize(x0, P0);
     }
 public:
@@ -47,9 +47,10 @@ TEST_F(Ekf16Tests, InitializationCorrect) {
     
     EXPECT_TRUE(ekf.pos().isApprox(p0));
     EXPECT_TRUE(ekf.vel().isApprox(v0));
-    // [cite: 336] Quaternion convention check (scalar-last is Eigen default, but we check values)
-    EXPECT_DOUBLE_EQ(ekf.q_vec().w(), 1.0); 
-    EXPECT_DOUBLE_EQ(ekf.q_vec().x(), 0.0);
+    // EKF stores quaternion as [w,x,y,z] in the state vector
+    // VectorBlock .x()/.w() map to element[0]/[3], not quaternion w/x
+    EXPECT_DOUBLE_EQ(ekf.q_vec()(0), 1.0);  // w component
+    EXPECT_DOUBLE_EQ(ekf.q_vec()(1), 0.0);  // x component
     
     // Check Covariance
     EXPECT_TRUE(ekf.getCovariance().isApprox(P0));
