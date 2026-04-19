@@ -9,7 +9,7 @@
 // Import sensor types into global namespace for EKF compatibility
 using sensors::ImuMeasurement;
 using sensors::Vec3;
-using sensors::Mat3;
+using Mat3 = Eigen::Matrix3d;
 
 struct EkfStatus {
     bool positive_definite_guaranteed;  // Gershgorin lower bounds all > 0

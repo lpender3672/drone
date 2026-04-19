@@ -39,7 +39,8 @@ struct TrueState {
     Vec3 euler_angles() const {
         Mat3 R = attitude.toRotationMatrix();
         double roll = std::atan2(R(2,1), R(2,2));
-        double pitch = std::asin(-std::clamp(R(2,0), -1.0, 1.0));
+        double r20 = R(2,0) < -1.0 ? -1.0 : (R(2,0) > 1.0 ? 1.0 : R(2,0));
+        double pitch = std::asin(-r20);
         double yaw = std::atan2(R(1,0), R(0,0));
         return Vec3(roll, pitch, yaw);
     }
@@ -75,6 +76,8 @@ struct ObservedState : public TrueState {
     ObservedState() = default;
     explicit ObservedState(const TrueState& base) : TrueState(base), valid(true) {}
 };
+
+using StateWithBiases = ObservedState;
 
 } // namespace shared
 
