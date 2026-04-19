@@ -1,6 +1,6 @@
 #include "ekf16d.h"
 #include "tuned_ekf_params.h"
-#include "utils.h"
+
 
 EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>(p)
 {
@@ -333,3 +333,124 @@ void EKF16d::update_magnetometer(const Eigen::Vector3d& mag_body,
     update_internal<3>(innovation, H, R);
 }
 
+// ============================================================================
+// IObserver interface implementation
+// ============================================================================
+
+void EKF16d::feed_imu(const sensors::ImuMeasurement& imu) {
+    // Compute dt from timestamp
+    double dt = last_imu_dt_;
+    if (last_imu_timestamp_us_ > 0 && imu.timestamp_us > last_imu_timestamp_us_) {
+        dt = (imu.timestamp_us - last_imu_timestamp_us_) * 1e-6;
+    }
+    last_imu_timestamp_us_ = imu.timestamp_us;
+    last_imu_dt_ = dt;
+    
+    // Cache angular velocity for output() (corrected for bias)
+    last_omega_ = imu.gyro - bg();
+    
+    // Run prediction step
+    predict(imu, dt);
+}
+
+void EKF16d::feed_mag(const sensors::MagMeasurement& mag) {
+    if (!mag.valid) return;
+    
+    // Default magnetometer noise covariance
+    // TODO: Make configurable or derive from measurement
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * 0.1;
+    
+    update_magnetometer(mag.field.normalized(), R);
+}
+
+void EKF16d::feed_baro(const sensors::BaroMeasurement& baro) {
+    if (!baro.valid) return;
+    
+    // Default barometer noise variance
+    // TODO: Make configurable
+    double R_var = 1.0;
+    
+    update_barometer(baro.altitude_m, R_var);
+}
+
+void EKF16d::feed_gnss(const sensors::GnssMeasurement& gnss) {
+    if (!gnss.valid || gnss.fix_type < 3) return;
+    
+    // Convert LLA to local NED (simplified - assumes small displacement from origin)
+    // TODO: Proper geodetic conversion with reference point
+    Eigen::Vector3d pos_ned;
+    pos_ned.x() = gnss.latitude_deg * 111319.9;   // Approximate m/deg at equator
+    pos_ned.y() = gnss.longitude_deg * 111319.9;
+    pos_ned.z() = -gnss.altitude_m;  // NED convention: down is positive
+    
+    // Position covariance from DOP values
+    double pos_var = gnss.hdop * gnss.hdop * 2.5;  // ~2.5m^2 per DOP
+    Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * pos_var;
+    R_pos(2,2) = gnss.vdop * gnss.vdop * 4.0;  // Vertical typically worse
+    
+    update_gnss_position(pos_ned, R_pos);
+    
+    // Velocity update
+    double vel_var = 0.1;  // m/s typical GNSS velocity accuracy
+    Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * vel_var;
+    
+    update_gnss_velocity(gnss.velocity_ned, R_vel);
+}
+
+shared::StateWithBiases EKF16d::output() const {
+    shared::StateWithBiases state;
+    
+    // Position and velocity directly from state vector
+    state.position = pos();
+    state.velocity = vel();
+    
+    // Quaternion: EKF stores [w,x,y,z], Eigen Quaterniond uses [x,y,z,w] internally
+    // but constructor is (w,x,y,z)
+    Eigen::Vector4d qv = q_vec();
+    state.attitude = Eigen::Quaterniond(qv(0), qv(1), qv(2), qv(3));
+    
+    // Angular velocity from cached IMU (bias-corrected)
+    state.angular_velocity = last_omega_;
+    
+    // Biases
+    state.accel_bias = ba();
+    state.gyro_bias = bg();
+    state.baro_bias = bbaro();
+    
+    return state;
+}
+
+void EKF16d::reset(const shared::StateWithBiases& initial) {
+    // Build nominal state vector
+    NominalVector x0;
+    x0.setZero();
+    
+    x0.segment<3>(NOM_POS) = initial.position;
+    x0.segment<3>(NOM_VEL) = initial.velocity;
+    
+    // Quaternion to state format [w,x,y,z]
+    x0(NOM_QUAT + 0) = initial.attitude.w();
+    x0(NOM_QUAT + 1) = initial.attitude.x();
+    x0(NOM_QUAT + 2) = initial.attitude.y();
+    x0(NOM_QUAT + 3) = initial.attitude.z();
+    
+    x0.segment<3>(NOM_BA) = initial.accel_bias;
+    x0.segment<3>(NOM_BG) = initial.gyro_bias;
+    x0(NOM_BBARO) = initial.baro_bias;
+    
+    // Reset covariance to initial values
+    CovMatrix P0;
+    P0.setIdentity();
+    P0.block<3,3>(ERR_POS, ERR_POS) *= 10.0;    // Position uncertainty
+    P0.block<3,3>(ERR_VEL, ERR_VEL) *= 1.0;     // Velocity uncertainty
+    P0.block<3,3>(ERR_ATT, ERR_ATT) *= 0.1;     // Attitude uncertainty
+    P0.block<3,3>(ERR_BA, ERR_BA) *= 0.01;      // Accel bias uncertainty
+    P0.block<3,3>(ERR_BG, ERR_BG) *= 0.001;     // Gyro bias uncertainty
+    P0(ERR_BBARO, ERR_BBARO) = 1.0;             // Baro bias uncertainty
+    
+    initialize(x0, P0);
+    
+    // Reset cached values
+    last_omega_ = initial.angular_velocity;
+    last_imu_timestamp_us_ = 0;
+}

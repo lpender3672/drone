@@ -1,0 +1,15 @@
+{
+  "name": "global-shared",
+  "version": "0.3.0",
+  "description": "Shared sensor base classes and data structures for all platforms (C and C++)",
+  "keywords": ["sensors", "ekf", "navigation", "ins", "imu", "gnss", "barometer", "magnetometer"],
+  "build": {
+    "libArchive": false,
+    "flags": "-std=c++11"
+  },
+  "export": {
+    "include": ["sensors"]
+  },
+  "frameworks": "*",
+  "platforms": "*"
+}

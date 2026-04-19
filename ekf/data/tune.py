@@ -15,7 +15,7 @@ RecordHeader = Tuple[int, int, int, int]  # (t_ms, len, truncated, reserved)
 
 
 def iter_sensorbase_bin_records(path: Path) -> Iterator[Tuple[int, bytes, bool]]:
-    """Iterate SensorBase records from a .bin file.
+    """Iterate Sensor records from a .bin file.
 
     Format (little-endian):
       uint32 t_ms
@@ -272,7 +272,7 @@ def tune_csv(path, axes: Optional[np.ndarray] = None, ax_baro: Optional[plt.Axes
 
 def tune_teensy_bin_dir(data_dir: Path, axes: Optional[np.ndarray] = None,
                         ax_baro: Optional[plt.Axes] = None, label: Optional[str] = None):
-    """Tune IMU + Baro from Teensy SensorBase .bin logs in a directory."""
+    """Tune IMU + Baro from Teensy Sensor .bin logs in a directory."""
     imu_path = data_dir / 'IMU.bin'
     baro_path = data_dir / 'Baro.bin'
     mag_path = data_dir / 'Mag.bin'

@@ -1,12 +1,12 @@
 ﻿{
   "name": "eskf",
-  "version": "0.1.0",
-  "description": "Shared navigation and EKF utilities",
-  "keywords": ["ekf", "navigation", "ins"],
+  "version": "0.2.0",
+  "description": "Error-state Kalman filter and navigation utilities",
+  "keywords": ["ekf", "eskf", "kalman-filter", "navigation", "ins", "state-estimation"],
   "build": {
     "libArchive": false,
     "srcDir": "shared"
   },
-  "frameworks": ["arduino"],
-  "platforms": ["teensy"]
+  "frameworks": "*",
+  "platforms": "*"
 }
