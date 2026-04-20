@@ -129,4 +129,21 @@ protected:
     OutputPort<TOut> output_;
 };
 
+template<typename TOut>
+class SourceBlock : public Block {
+public:
+    SourceBlock(const std::string& name,
+                const std::string& output_name,
+                uint32_t update_period_us = 0)
+        : Block(name, update_period_us)
+        , output_(output_name)
+    {}
+
+    OutputPort<TOut>& output() { return output_; }
+    const OutputPort<TOut>& output() const { return output_; }
+
+protected:
+    OutputPort<TOut> output_;
+};
+
 } // namespace sim

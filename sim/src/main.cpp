@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <fstream>
 #include <memory>
 #include <cmath>
 
@@ -12,6 +13,8 @@
 #include "quadcopter/motor.hpp"
 #include "quadcopter/observer.hpp"
 #include "blocks/sensors_impl.hpp"
+#include "blocks/signal_generator.hpp"
+#include "blocks/force_disturbance.hpp"
 
 // EKF params
 #include "tuned_ekf_params.h"
@@ -20,7 +23,7 @@ using namespace sim;
 using namespace sim::quadcopter;
 
 int main() {
-    std::cout << "=== Quadrotor Simulation ===\n\n";
+    std::cout << "=== Quadrotor Closed-Loop Impulse Response ===\n\n";
 
     Simulation sim_runner(0.001);
 
@@ -32,6 +35,17 @@ int main() {
     auto imu_sensor  = sim_runner.add_block(std::make_unique<ImuSensor<TrueState>>("imu", 1000, 1000));
     auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000, 100000));
     auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>("ekf", TEENSY_PTYPE_DATA_PARAMS, 1000));
+
+    // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
+    // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick
+    WaveformParams dist_params;
+    dist_params.type         = Waveform::Impulse;
+    dist_params.amplitude    = 0.1;   // N·m
+    dist_params.start_time_s = 1.0;   // s
+    dist_params.duration_s   = 0.01;  // 10 ms
+
+    auto dist_gen    = sim_runner.add_block(std::make_unique<WaveformGenerator>("dist_gen",    dist_params, 1000));
+    auto dist_torque = sim_runner.add_block(std::make_unique<TorqueDisturbanceBlock>("dist_torque", Vec3(1, 0, 0), 1000)); // roll axis
 
     // =========================================
     // Configure dynamics
@@ -48,7 +62,7 @@ int main() {
     dyn_params.propeller.rho   = 1.225;
     dynamics->set_params(dyn_params);
 
-    // Initial state: 1m above ground in NED (z negative = up)
+    // Initial state: 1 m above ground in NED (z negative = up)
     TrueState init;
     init.position         = Vec3(0.0, 0.0, -1.0);
     init.velocity         = Vec3::Zero();
@@ -56,8 +70,8 @@ int main() {
     init.angular_velocity = Vec3::Zero();
     dynamics->reset(init);
 
-    // Initialise EKF from same state
     ekf_block->initialize(init);
+    ekf_block->set_gnss_enabled(false);  // test: EKF predict only
 
     // =========================================
     // Hover reference
@@ -69,54 +83,81 @@ int main() {
     ref.set_thrust(0.70);
 
     // =========================================
-    // Run loop (manual, 1ms steps)
+    // CSV output
+    // =========================================
+    std::ofstream csv("impulse_response.csv");
+    csv << "t_s,roll_deg,pitch_deg,yaw_deg,roll_rate_dps,pitch_rate_dps,pos_z_m,disturbance_nm\n";
+    csv << std::fixed << std::setprecision(6);
+
+    // =========================================
+    // Run loop: 5 seconds, 1 ms steps
     // =========================================
     constexpr uint64_t DT_US  = 1000;
-    constexpr uint64_t END_US = 5000000;  // 5 seconds
+    constexpr uint64_t END_US = 5000000;
 
     std::cout << std::fixed << std::setprecision(4);
-    std::cout << "  t(s)   pos_z(m)  est_z(m)   vel_z(m/s)   roll(deg)   pitch(deg)\n";
-    std::cout << "------------------------------------------------------------------------\n";
+    std::cout << "  t(s)   roll(deg)  pitch(deg)  pos_z(m)  dist(N·m)\n";
+    std::cout << "-----------------------------------------------------------\n";
 
     for (uint64_t t = 0; t < END_US; t += DT_US) {
 
-        // Feed true state to sensors
+        // 1. Disturbance chain
+        dist_gen->update(t);
+        dist_torque->input().set(dist_gen->output().get());
+        dist_torque->update(t);
+        dynamics->disturbance_torque_input().set(dist_torque->output().get());
+
+        // 2. Feed true state to sensors
         const TrueState& true_state = dynamics->output().get();
         imu_sensor->input().set(true_state);
         gnss_sensor->input().set(true_state);
 
-        // Update sensors
         imu_sensor->update(t);
         gnss_sensor->update(t);
 
-        // Feed sensor outputs to EKF and update
+        // 3. EKF
         ekf_block->imu_input().set(imu_sensor->output().get());
         ekf_block->gnss_input().set(gnss_sensor->output().get());
         ekf_block->update(t);
 
-        // Feed EKF estimate to controller
+        // 4. Controller (uses EKF estimate)
         controller->state_input().set(ekf_block->output().get());
         controller->reference_input().set(ref);
         controller->update(t);
 
-        // Feed motor efforts to dynamics
+        // 5. Dynamics
         dynamics->input().set(controller->output().get());
         dynamics->update(t);
 
-        // Print at 1 Hz
+        // 6. CSV row
+        const auto& s  = dynamics->output().get();
+        Vec3 euler     = s.euler_angles();
+        Vec3 omega_dps = s.angular_velocity * (180.0 / M_PI);
+        double dist_nm = dist_gen->value();
+
+        csv << (t / 1e6)
+            << "," << (euler.x() * 180.0 / M_PI)
+            << "," << (euler.y() * 180.0 / M_PI)
+            << "," << (euler.z() * 180.0 / M_PI)
+            << "," << omega_dps.x()
+            << "," << omega_dps.y()
+            << "," << s.position.z()
+            << "," << dist_nm
+            << "\n";
+
+        // 7. Console at 1 Hz
         if (t % 1000000 == 0) {
-            const auto& s   = dynamics->output().get();
-            const auto& est = ekf_block->output().get();
-            Vec3 euler = s.euler_angles();
             std::cout << std::setw(6)  << (t / 1e6)
-                      << "   " << std::setw(7) << s.position.z()
-                      << "   " << std::setw(7) << est.position.z()
-                      << "   " << std::setw(10) << s.velocity.z()
-                      << "   " << std::setw(9) << (euler.x() * 180.0 / M_PI)
-                      << "   " << std::setw(10) << (euler.y() * 180.0 / M_PI)
+                      << "   roll=" << std::setw(7) << (euler.x() * 180.0 / M_PI)
+                      << " pitch=" << std::setw(7) << (euler.y() * 180.0 / M_PI)
+                      << " pos_z=" << std::setw(7) << s.position.z()
+                      << " dist=" << std::setw(6) << dist_nm
                       << "\n";
         }
     }
+
+    csv.close();
+    std::cout << "\nWrote impulse_response.csv\n";
 
     return 0;
 }

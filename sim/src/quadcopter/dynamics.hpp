@@ -45,7 +45,25 @@ public:
 
     void reset(const TrueState& initial_state) override {
         DynamicsBlock::reset(initial_state);
+        // Initialize motors at hover RPM to avoid spin-up transient
+        double hover_omega = std::sqrt(params_.mass * params_.gravity /
+            (4.0 * params_.propeller.k_t * params_.propeller.rho *
+             std::pow(params_.propeller.d, 4)));
+        double hover_thrust = params_.propeller.k_t * params_.propeller.rho *
+            hover_omega * hover_omega * std::pow(params_.propeller.d, 4);
+        double hover_torque = params_.propeller.k_q * params_.propeller.rho *
+            hover_omega * hover_omega * std::pow(params_.propeller.d, 5);
+        for (int i = 0; i < 4; ++i) {
+            if (motors_[i]) {
+                motors_[i]->output().value.set_omega(hover_omega);
+                motors_[i]->output().value.set_thrust(hover_thrust);
+                motors_[i]->output().value.set_torque(hover_torque);
+            }
+        }
     }
+
+    InputPort<NedForce>&   disturbance_input()        { return disturbance_input_; }
+    InputPort<BodyTorque>& disturbance_torque_input() { return disturbance_torque_input_; }
 
 protected:
     void step_dynamics(double dt) override {
@@ -68,7 +86,8 @@ protected:
         Vec3 drag = -params_.drag_coeff * this->output_.value.velocity;
         Vec3 gravity_vec(0.0, 0.0, params_.mass * params_.gravity);
 
-        Vec3 accel = (thrust_ned + drag + gravity_vec) / params_.mass;
+        Vec3 ext_force = disturbance_input_.connected ? disturbance_input_.value.force() : Vec3::Zero();
+        Vec3 accel = (thrust_ned + drag + gravity_vec + ext_force) / params_.mass;
         this->output_.value.velocity += accel * dt;
         this->output_.value.position += this->output_.value.velocity * dt;
 
@@ -82,7 +101,9 @@ protected:
         double tau_pitch = L * (thrust[1] + thrust[3] - thrust[0] - thrust[2]);
         double tau_yaw = torque[0] + torque[1] - torque[2] - torque[3];
 
-        Vec3 body_torque(tau_roll, tau_pitch, tau_yaw);
+        Vec3 ext_torque = disturbance_torque_input_.connected
+            ? disturbance_torque_input_.value.torque() : Vec3::Zero();
+        Vec3 body_torque = Vec3(tau_roll, tau_pitch, tau_yaw) + ext_torque;
 
         Vec3 omega = this->output_.value.angular_velocity;
         Vec3 I = params_.inertia;
@@ -105,6 +126,8 @@ private:
     Params params_;
     uint32_t internal_period_us_;
     std::array<std::unique_ptr<Motor>, 4> motors_;
+    InputPort<NedForce>   disturbance_input_{"disturbance"};
+    InputPort<BodyTorque> disturbance_torque_input_{"disturbance_torque"};
 };
 
 } // namespace quadcopter
