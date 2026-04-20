@@ -375,26 +375,36 @@ void EKF16d::feed_baro(const sensors::BaroMeasurement& baro) {
 
 void EKF16d::feed_gnss(const sensors::GnssMeasurement& gnss) {
     if (!gnss.valid || gnss.fix_type < 3) return;
-    
-    // Convert LLA to local NED (simplified - assumes small displacement from origin)
-    // TODO: Proper geodetic conversion with reference point
-    Eigen::Vector3d pos_ned;
-    pos_ned.x() = gnss.latitude_deg * 111319.9;   // Approximate m/deg at equator
-    pos_ned.y() = gnss.longitude_deg * 111319.9;
-    pos_ned.z() = -gnss.altitude_m;  // NED convention: down is positive
-    
-    // Position covariance from DOP values
-    double pos_var = gnss.hdop * gnss.hdop * 2.5;  // ~2.5m^2 per DOP
-    Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * pos_var;
-    R_pos(2,2) = gnss.vdop * gnss.vdop * 4.0;  // Vertical typically worse
-    
-    update_gnss_position(pos_ned, R_pos);
-    
+
+    // Pass geodetic directly: EKF pos state is (lat_rad, lon_rad, alt_m).
+    const double lat_rad = gnss.latitude_deg  * (M_PI / 180.0);
+    const double lon_rad = gnss.longitude_deg * (M_PI / 180.0);
+    Eigen::Vector3d pos_geo(lat_rad, lon_rad, gnss.altitude_m);
+
+    // Horizontal accuracy: prefer receiver-reported 1-sigma if available, else derive from HDOP.
+    // Scale from m to rad using meridian (RM) and normal (RN) radii of curvature.
+    double RM, RN;
+    compute_radius(lat_rad, RM, RN);
+    const double cos_lat = std::cos(lat_rad);
+
+    double sigma_h_m = (gnss.h_accuracy_m > 0.0f)
+        ? gnss.h_accuracy_m
+        : gnss.hdop * std::sqrt(2.5);
+
+    double sigma_v_m = (gnss.v_accuracy_m > 0.0f)
+        ? gnss.v_accuracy_m
+        : gnss.vdop * 2.0;
+
+    Eigen::Matrix3d R_pos = Eigen::Matrix3d::Zero();
+    R_pos(0, 0) = (sigma_h_m * sigma_h_m) / (RM * RM);
+    R_pos(1, 1) = (sigma_h_m * sigma_h_m) / (RN * RN * cos_lat * cos_lat);
+    R_pos(2, 2) =  sigma_v_m * sigma_v_m;
+
+    update_gnss_position(pos_geo, R_pos);
+
     // Velocity update
-    double vel_var = 0.1;  // m/s typical GNSS velocity accuracy
-    Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * vel_var;
-    
-    update_gnss_velocity(gnss.velocity_ned, R_vel);
+    double vel_var = 0.1;
+    update_gnss_velocity(gnss.velocity_ned, Eigen::Matrix3d::Identity() * vel_var);
 }
 
 shared::StateWithBiases EKF16d::output() const {

@@ -89,8 +89,7 @@ public:
         if (gnss_input_.connected && gnss_updates_enabled_) {
             uint64_t gnss_ts = gnss_input_.value.timestamp();
             if (gnss_ts != last_gnss_ts_ && gnss_ts > 0) {
-                const auto& g = gnss_input_.value;
-                gnss_to_ned_update(g);
+                ekf_.feed_gnss(static_cast<const sensors::GnssMeasurement&>(gnss_input_.value));
                 last_gnss_ts_ = gnss_ts;
             }
         }
@@ -108,36 +107,6 @@ public:
 
     EKF16d& ekf() { return ekf_; }
     void set_gnss_enabled(bool v) { gnss_updates_enabled_ = v; }
-
-private:
-    void gnss_to_ned_update(const GnssData& g) {
-        // EKF stores position as (lat_rad, lon_rad, alt_m) — pass geodetic directly.
-        double lat_rad = g.latitude_deg  * M_PI / 180.0;
-        double lon_rad = g.longitude_deg * M_PI / 180.0;
-        double alt_m   = g.altitude_m;
-
-        Eigen::Vector3d pos_geo(lat_rad, lon_rad, alt_m);
-
-        // Scale horizontal noise from m² → rad²: σ_lat = σ_m / RM, σ_lon = σ_m / (RN·cosφ)
-        constexpr double RM = 6335439.0;  // meridian radius at ~52°N
-        constexpr double RN = 6378388.0;  // normal radius at ~52°N
-        double hdop = g.hdop > 0.0f ? g.hdop : 1.0f;
-        double vdop = g.vdop > 0.0f ? g.vdop : 1.5f;
-        double sigma_h_m2 = hdop * hdop * 2.5;
-        double sigma_v_m2 = vdop * vdop * 4.0;
-        double cos_lat = std::cos(lat_rad);
-
-        Eigen::Matrix3d R_pos = Eigen::Matrix3d::Zero();
-        R_pos(0, 0) = sigma_h_m2 / (RM * RM);
-        R_pos(1, 1) = sigma_h_m2 / (RN * RN * cos_lat * cos_lat);
-        R_pos(2, 2) = sigma_v_m2;
-
-        ekf_.update_gnss_position(pos_geo, R_pos);
-
-        constexpr double vel_var = 0.1;
-        ekf_.update_gnss_velocity(g.velocity_ned,
-                                  Eigen::Matrix3d::Identity() * vel_var);
-    }
 
     EKF16d              ekf_;
     InputPort<ImuData>  imu_input_;

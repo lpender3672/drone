@@ -6,11 +6,12 @@
 #include <csignal>
 #include <cmath>
 
-#include "ekf16d.h" 
+#include "ekf16d.h"
 #include "tuned_ekf_params.h"
 #include "RTIMULib.h"
 #include "gps_interface.h"
 #include "sensor_io.h"
+#include "sensor_readings.h"
 
 volatile bool running = true;
 void signalHandler(int signum) { running = false; }
@@ -216,40 +217,22 @@ int main(int argc, char* argv[]) {
                 
                 if (gps_data.valid_position && gps_data.fix_type >= 2) {
                     gps_count++;
-                    
-                    // Position update: convert GPS accuracy to covariance
-                    // horizontal_accuracy is CEP (circular error probable), ~1 sigma
-                    double h_var = gps_data.horizontal_accuracy * gps_data.horizontal_accuracy;
-                    double v_var = gps_data.vertical_accuracy * gps_data.vertical_accuracy;
-                    
-                    // Convert lat/lon accuracy from meters to radians
-                    EKF16d::NominalVector state = ekf.getState();
-                    double R_N = 6378137.0 * (1.0 - 0.00669438 * sin(state[NOM_POS]) * sin(state[NOM_POS+1]));
-                    double lat_var = h_var / (R_N * R_N);
-                    double lon_var = h_var / (R_N * cos(state[NOM_POS]) * R_N * cos(state[NOM_POS]));
 
-                    Eigen::Vector3d pos_gnss(
-                        gps_data.latitude * DEG_TO_RAD,
-                        gps_data.longitude * DEG_TO_RAD,
-                        gps_data.altitude_msl
-                    );
-                    
-                    Eigen::Matrix3d R_pos = Eigen::Matrix3d::Zero();
-                    R_pos(0,0) = lat_var;
-                    R_pos(1,1) = lon_var;
-                    R_pos(2,2) = v_var;
-                    
-                    ekf.update_gnss_position(pos_gnss, R_pos);
+                    sensors::GnssMeasurement gnss_meas;
+                    gnss_meas.latitude_deg  = gps_data.latitude;
+                    gnss_meas.longitude_deg = gps_data.longitude;
+                    gnss_meas.altitude_m    = gps_data.altitude_msl;
+                    gnss_meas.velocity_ned  = Eigen::Vector3d(
+                        gps_data.velocity_north,
+                        gps_data.velocity_east,
+                        gps_data.velocity_down);
+                    gnss_meas.h_accuracy_m  = gps_data.horizontal_accuracy;
+                    gnss_meas.v_accuracy_m  = gps_data.vertical_accuracy;
+                    gnss_meas.fix_type      = gps_data.fix_type;
+                    gnss_meas.num_satellites = gps_data.num_satellites;
+                    gnss_meas.valid         = true;
 
-                    // Velocity update
-                    if (gps_data.valid_velocity) {
-                        double speed_var = gps_data.speed_accuracy * gps_data.speed_accuracy;
-                        
-                        Eigen::Vector3d vel_gnss(gps_data.velocity_north, gps_data.velocity_east, gps_data.velocity_down);
-                        Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * speed_var;
-                        
-                        ekf.update_gnss_velocity(vel_gnss, R_vel);
-                    }
+                    ekf.feed_gnss(gnss_meas);
 
                     // Status output
                     if (gps_count % 5 == 0) {

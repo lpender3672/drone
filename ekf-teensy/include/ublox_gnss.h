@@ -87,20 +87,13 @@ public:
         latest_reading_.num_satellites = gnss_.getSIV();
         latest_reading_.hdop = gnss_.getHorizontalDOP() * 0.01f;
         latest_reading_.vdop = gnss_.getVerticalDOP() * 0.01f;
+        latest_reading_.h_accuracy_m = gnss_.getHorizontalAccuracy() * 1e-4f;  // 0.1mm units → m
+        latest_reading_.v_accuracy_m = gnss_.getVerticalAccuracy()   * 1e-4f;
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
 
-        // Update EKF
-        Eigen::Vector3d pos_ned(lat, lon, alt);
-        const Eigen::Vector3d& vel_ned = latest_reading_.velocity_ned;
-
-        // Position covariance (diagonal)
-        Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * (pos_std_ * pos_std_);
-        Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * (vel_std_ * vel_std_);
-
-        ekf_->update_gnss_position(pos_ned, R_pos);
-        ekf_->update_gnss_velocity(vel_ned, R_vel);
+        ekf_->feed_gnss(latest_reading_);
 
         // Log data to SD card if enabled
         struct GnssLogSample {
