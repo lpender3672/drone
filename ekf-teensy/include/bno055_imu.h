@@ -47,12 +47,6 @@ public:
         bno_.getEvent(&accel, Adafruit_BNO055::VECTOR_ACCELEROMETER);
         bno_.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
 
-        static uint32_t last_time_us = 0;
-        if (last_time_us == 0) last_time_us = current_time_us;
-        
-        float dt = (current_time_us - last_time_us) * 1e-6f;
-        last_time_us = current_time_us;
-
         // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.acc = Eigen::Vector3d(
@@ -67,15 +61,12 @@ public:
 
         new_reading_available_ = true;
 
-        if (dt > 0.0f && dt < 0.1f) {
-            observer_->feed_imu(latest_reading_);
-        }
+        observer_->feed_imu(latest_reading_);
 
         // Log data to SD card if enabled
         struct ImuLogSample {
             float acc_g[3];
             float gyro_rads[3];
-            float dt;
         } sample;
 
         sample.acc_g[0] = accel.acceleration.x / sensors::GRAVITY_MS2;
@@ -84,7 +75,6 @@ public:
         sample.gyro_rads[0] = gyro.gyro.x;
         sample.gyro_rads[1] = gyro.gyro.y;
         sample.gyro_rads[2] = gyro.gyro.z;
-        sample.dt = dt;
 
         endTiming();
 

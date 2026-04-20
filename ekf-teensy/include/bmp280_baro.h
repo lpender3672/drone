@@ -116,7 +116,7 @@ public:
         
         if (p_pa <= 0.0f) {
             endTiming();
-            return;
+            return false;
         }
 
         if (!ref_set_) {
