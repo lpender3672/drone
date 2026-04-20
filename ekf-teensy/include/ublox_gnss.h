@@ -102,12 +102,12 @@ public:
             uint8_t fix;
         } sample;
 
-        sample.pos[0] = static_cast<float>(pos_ned.x());
-        sample.pos[1] = static_cast<float>(pos_ned.y());
-        sample.pos[2] = static_cast<float>(pos_ned.z());
-        sample.vel[0] = static_cast<float>(vel_ned.x());
-        sample.vel[1] = static_cast<float>(vel_ned.y());
-        sample.vel[2] = static_cast<float>(vel_ned.z());
+        sample.pos[0] = static_cast<float>(lat);
+        sample.pos[1] = static_cast<float>(lon);
+        sample.pos[2] = static_cast<float>(alt);
+        sample.vel[0] = static_cast<float>(latest_reading_.velocity_ned.x());
+        sample.vel[1] = static_cast<float>(latest_reading_.velocity_ned.y());
+        sample.vel[2] = static_cast<float>(latest_reading_.velocity_ned.z());
         sample.fix = fix;
 
         endTiming();
