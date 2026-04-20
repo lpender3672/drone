@@ -43,7 +43,6 @@ public:
     virtual void update_gnss_position(const Eigen::Vector3d&, const Eigen::Matrix3d&) = 0;
     virtual void update_gnss_velocity(const Eigen::Vector3d&, const Eigen::Matrix3d&) = 0;
     virtual void update_barometer(const double, const double) = 0;
-    virtual void feed_gnss(const sensors::GnssMeasurement& gnss) { (void)gnss; }
 
     virtual void predict(const ImuMeasurement&, double) = 0;
 };
