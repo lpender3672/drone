@@ -4,7 +4,7 @@
 #include <sensor_base.h>
 #include <sensor_readings.h>
 #include <Adafruit_BNO055.h>
-#include <ekf.h>
+#include <observer.h>
 
 #include "teensy_sensor_logger.h"
 
@@ -15,14 +15,13 @@
 class BNO055Mag : public sensors::Sensor<sensors::MagReading>, public sensors::TeensySensorLogger {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
-    IEKF* ekf_;
-    double mag_std_ = 0.5;  // uT
+    shared::IObserverWithBiases* observer_;
 
 public:
-    BNO055Mag(Adafruit_BNO055* bno, IEKF* ekf, uint32_t interval_ms = 20)
+    BNO055Mag(Adafruit_BNO055* bno, shared::IObserverWithBiases* observer, uint32_t interval_ms = 20)
         : Sensor<sensors::MagReading>("Mag", (uint64_t)interval_ms * 1000),
           TeensySensorLogger("Mag"),
-          bno_(bno), ekf_(ekf) {}
+          bno_(bno), observer_(observer) {}
 
     bool initialize() override {
         // BNO055 initialized by IMU sensor
@@ -48,10 +47,7 @@ public:
 
         new_reading_available_ = true;
 
-        // Update EKF
-        Eigen::Vector3d mag_body(mag.magnetic.x, mag.magnetic.y, mag.magnetic.z);
-        Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * (mag_std_ * mag_std_);
-        ekf_->update_magnetometer(mag_body, R);
+        observer_->feed_mag(latest_reading_);
 
         // Log data to SD card if enabled
         struct MagLogSample {
@@ -70,7 +66,6 @@ public:
         return true;
     }
 
-    void setMagStd(double std) { mag_std_ = std; }
 };
 
 #endif  // EKF_TEENSY_BNO055_MAG_H

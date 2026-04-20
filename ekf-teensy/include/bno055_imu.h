@@ -6,7 +6,7 @@
 #include <sensor_constants.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
-#include <ekf.h>
+#include <observer.h>
 
 /**
  * BNO055 IMU sensor implementation for Teensy.
@@ -15,13 +15,13 @@
 class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::TeensySensorLogger {
 private:
     Adafruit_BNO055 bno_;
-    IEKF* ekf_;
+    shared::IObserverWithBiases* observer_;
 
 public:
-    BNO055Imu(IEKF* ekf, uint32_t interval_ms = 10)
+    BNO055Imu(shared::IObserverWithBiases* observer, uint32_t interval_ms = 10)
         : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
           TeensySensorLogger("IMU"),
-          bno_(55, 0x28), ekf_(ekf) {}
+          bno_(55, 0x28), observer_(observer) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
 
@@ -67,12 +67,8 @@ public:
 
         new_reading_available_ = true;
 
-        // Update EKF if valid time step
         if (dt > 0.0f && dt < 0.1f) {
-            ImuMeasurement msg;
-            msg.acc = latest_reading_.acc / sensors::GRAVITY_MS2;  // Convert to g's for EKF
-            msg.gyro = latest_reading_.gyro;
-            // ekf_->predict(msg, dt);  // Uncomment when needed
+            observer_->feed_imu(latest_reading_);
         }
 
         // Log data to SD card if enabled
