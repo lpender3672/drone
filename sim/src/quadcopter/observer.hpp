@@ -34,9 +34,18 @@ public:
 
     void initialize(const shared::TrueState& state) {
         // Build nominal state vector: [pos(3), vel(3), q(4), ba(3), bg(3), bbaro(1)]
+        // EKF pos is geodetic (lat_rad, lon_rad, alt_m); convert from NED metres.
+        constexpr double M_PER_DEG_LAT = 111319.9;
+        double lat_rad = (origin_lat_deg_ + state.position.x() / M_PER_DEG_LAT) * M_PI / 180.0;
+        double m_per_deg_lon = M_PER_DEG_LAT * std::cos(origin_lat_deg_ * M_PI / 180.0);
+        double lon_rad = (origin_lon_deg_ + state.position.y() / m_per_deg_lon) * M_PI / 180.0;
+        double alt_m   = origin_alt_m_ - state.position.z();  // NED z-down → altitude up
+
         EKF16d::NominalVector x0;
         x0.setZero();
-        x0.segment<3>(0)  = state.position;
+        x0(0) = lat_rad;
+        x0(1) = lon_rad;
+        x0(2) = alt_m;
         x0.segment<3>(3)  = state.velocity;
         x0(6) = state.attitude.w();
         x0(7) = state.attitude.x();
@@ -49,7 +58,10 @@ public:
         // attitude corrections through the P_vel_att coupling.
         EKF16d::CovMatrix P0;
         P0.setZero();
-        P0.block<3,3>(0,0)   = Eigen::Matrix3d::Identity() * 1.0;     // pos: 1 m
+        // pos variance in geodetic units: 1 m / RM ≈ 1.5e-7 rad for horizontal, 1 m² for alt
+        P0(0,0) = 1.0 / (6335439.0 * 6335439.0);
+        P0(1,1) = 1.0 / (6378388.0 * 6378388.0);
+        P0(2,2) = 1.0;
         P0.block<3,3>(3,3)   = Eigen::Matrix3d::Identity() * 1e-4;    // vel: 0.01 m/s
         P0.block<3,3>(6,6)   = Eigen::Matrix3d::Identity() * 1e-6;    // att: 0.001 rad
         P0.block<3,3>(9,9)   = Eigen::Matrix3d::Identity() * 1e-6;    // accel bias
@@ -99,20 +111,28 @@ public:
 
 private:
     void gnss_to_ned_update(const GnssData& g) {
-        constexpr double M_PER_DEG_LAT = 111319.9;
-        double m_per_deg_lon = M_PER_DEG_LAT * std::cos(origin_lat_deg_ * M_PI / 180.0);
+        // EKF stores position as (lat_rad, lon_rad, alt_m) — pass geodetic directly.
+        double lat_rad = g.latitude_deg  * M_PI / 180.0;
+        double lon_rad = g.longitude_deg * M_PI / 180.0;
+        double alt_m   = g.altitude_m;
 
-        Eigen::Vector3d pos_ned;
-        pos_ned.x() = (g.latitude_deg  - origin_lat_deg_) * M_PER_DEG_LAT;
-        pos_ned.y() = (g.longitude_deg - origin_lon_deg_) * m_per_deg_lon;
-        pos_ned.z() = -(g.altitude_m   - origin_alt_m_);
+        Eigen::Vector3d pos_geo(lat_rad, lon_rad, alt_m);
 
+        // Scale horizontal noise from m² → rad²: σ_lat = σ_m / RM, σ_lon = σ_m / (RN·cosφ)
+        constexpr double RM = 6335439.0;  // meridian radius at ~52°N
+        constexpr double RN = 6378388.0;  // normal radius at ~52°N
         double hdop = g.hdop > 0.0f ? g.hdop : 1.0f;
         double vdop = g.vdop > 0.0f ? g.vdop : 1.5f;
-        Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * (hdop * hdop * 2.5);
-        R_pos(2, 2) = vdop * vdop * 4.0;
+        double sigma_h_m2 = hdop * hdop * 2.5;
+        double sigma_v_m2 = vdop * vdop * 4.0;
+        double cos_lat = std::cos(lat_rad);
 
-        ekf_.update_gnss_position(pos_ned, R_pos);
+        Eigen::Matrix3d R_pos = Eigen::Matrix3d::Zero();
+        R_pos(0, 0) = sigma_h_m2 / (RM * RM);
+        R_pos(1, 1) = sigma_h_m2 / (RN * RN * cos_lat * cos_lat);
+        R_pos(2, 2) = sigma_v_m2;
+
+        ekf_.update_gnss_position(pos_geo, R_pos);
 
         constexpr double vel_var = 0.1;
         ekf_.update_gnss_velocity(g.velocity_ned,

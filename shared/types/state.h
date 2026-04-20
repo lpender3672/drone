@@ -16,11 +16,12 @@ using Quat = Eigen::Quaterniond;
  */
 struct TrueState {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
+
     Vec3 position = Vec3::Zero();
     Vec3 velocity = Vec3::Zero();
     Quat attitude = Quat::Identity();
     Vec3 angular_velocity = Vec3::Zero();
+    Vec3 linear_accel = Vec3::Zero();  // NED acceleration (m/s²), set by dynamics
     
     TrueState() = default;
     

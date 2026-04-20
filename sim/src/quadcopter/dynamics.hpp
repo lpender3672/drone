@@ -88,6 +88,7 @@ protected:
 
         Vec3 ext_force = disturbance_input_.connected ? disturbance_input_.value.force() : Vec3::Zero();
         Vec3 accel = (thrust_ned + drag + gravity_vec + ext_force) / params_.mass;
+        this->output_.value.linear_accel = accel;
         this->output_.value.velocity += accel * dt;
         this->output_.value.position += this->output_.value.velocity * dt;
 

@@ -71,7 +71,7 @@ int main() {
     dynamics->reset(init);
 
     ekf_block->initialize(init);
-    ekf_block->set_gnss_enabled(false);  // test: EKF predict only
+    ekf_block->set_gnss_enabled(true);
 
     // =========================================
     // Hover reference
