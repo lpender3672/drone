@@ -33,6 +33,10 @@ struct EkfErrorParameters {
     double accel_z_n, accel_z_b, accel_z_tp;
     // Barometer
     double baro_altitude_n, baro_altitude_b, baro_altitude_tp;
+    // Gravity aiding: per-axis stddev of the normalised accel-as-gravity measurement.
+    // Roughly (accel_noise / g), inflated to account for dynamics and double-counting
+    // the accelerometer that is also the forcing input in predict().
+    double gravity_sigma;
 };
 
 class IEKF {

@@ -32,10 +32,11 @@ int main() {
     // =========================================
     auto dynamics    = sim_runner.add_block(std::make_unique<QuadrotorDynamics>("dynamics", 1000, 100));
     auto controller  = sim_runner.add_block(std::make_unique<AttitudePidController>("controller", 1000));
-    auto imu_sensor  = sim_runner.add_block(std::make_unique<ImuSensor<TrueState>>("imu", 1000, 1000));
-    auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000, 100000));
-    auto baro_sensor = sim_runner.add_block(std::make_unique<BaroSensor<TrueState>>("baro", 50000, 50000));
-    auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>("ekf", TEENSY_PTYPE_DATA_PARAMS, 1000));
+    auto imu_sensor  = sim_runner.add_block(std::make_unique<ImuSensor<TrueState>>("imu",    1000,      0));
+    auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000));
+    auto baro_sensor = sim_runner.add_block(std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000));
+    auto mag_sensor  = sim_runner.add_block(std::make_unique<MagSensor<TrueState>>("mag",   20000,      0));
+    auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>("ekf", SIM_DATA_PARAMS, 1000));
 
     // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
     // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick
@@ -76,6 +77,7 @@ int main() {
     ekf_block->initialize(init);
     ekf_block->set_gnss_enabled(true);
     ekf_block->set_baro_enabled(true);
+    ekf_block->set_mag_enabled(true);
 
     // =========================================
     // Hover reference
@@ -90,14 +92,15 @@ int main() {
     // CSV output
     // =========================================
     std::ofstream csv("impulse_response.csv");
-    csv << "t_s,roll_deg,pitch_deg,yaw_deg,roll_rate_dps,pitch_rate_dps,pos_z_m,disturbance_nm\n";
+    csv << "t_s,roll_deg,pitch_deg,yaw_deg,roll_rate_dps,pitch_rate_dps,pos_z_m,disturbance_nm,"
+           "ekf_roll_deg,ekf_pitch_deg,ekf_yaw_deg,ekf_pos_z_m\n";
     csv << std::fixed << std::setprecision(6);
 
     // =========================================
-    // Run loop: 5 seconds, 1 ms steps
+    // Run loop: 2 minutes, 1 ms steps
     // =========================================
     constexpr uint64_t DT_US  = 1000;
-    constexpr uint64_t END_US = 5000000;
+    constexpr uint64_t END_US = 120000000;
 
     std::cout << std::fixed << std::setprecision(4);
     std::cout << "  t(s)   roll(deg)  pitch(deg)  pos_z(m)  dist(N·m)\n";
@@ -116,15 +119,18 @@ int main() {
         imu_sensor->input().set(true_state);
         gnss_sensor->input().set(true_state);
         baro_sensor->input().set(true_state);
+        mag_sensor->input().set(true_state);
 
         imu_sensor->update(t);
         gnss_sensor->update(t);
         baro_sensor->update(t);
+        mag_sensor->update(t);
 
         // 3. EKF
         ekf_block->imu_input().set(imu_sensor->output().get());
         ekf_block->gnss_input().set(gnss_sensor->output().get());
         ekf_block->baro_input().set(baro_sensor->output().get());
+        ekf_block->mag_input().set(mag_sensor->output().get());
         ekf_block->update(t);
 
         // 4. Controller (uses EKF estimate)
@@ -142,6 +148,9 @@ int main() {
         Vec3 omega_dps = s.angular_velocity * (180.0 / M_PI);
         double dist_nm = dist_gen->value();
 
+        const auto& ekf_est = ekf_block->output().get();
+        Vec3 ekf_euler = ekf_est.euler_angles();
+
         csv << (t / 1e6)
             << "," << (euler.x() * 180.0 / M_PI)
             << "," << (euler.y() * 180.0 / M_PI)
@@ -150,6 +159,10 @@ int main() {
             << "," << omega_dps.y()
             << "," << s.position.z()
             << "," << dist_nm
+            << "," << (ekf_euler.x() * 180.0 / M_PI)
+            << "," << (ekf_euler.y() * 180.0 / M_PI)
+            << "," << (ekf_euler.z() * 180.0 / M_PI)
+            << "," << ekf_est.position.z()
             << "\n";
 
         // 7. Console at 1 Hz

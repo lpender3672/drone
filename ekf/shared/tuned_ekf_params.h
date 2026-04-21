@@ -30,6 +30,7 @@ inline constexpr EkfErrorParameters SENSE_HAT_DATA_PARAMS =
     .baro_altitude_n = 1.3389559051e-01,
     .baro_altitude_b = 1.4283838135e-02,
     .baro_altitude_tp = 0.019212,
+    .gravity_sigma = 2.0e-03,  // ~2x (accel_noise / g) with inflation for double-counting
 };
 
 inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS = 
@@ -56,6 +57,24 @@ inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS =
     .baro_altitude_n = 1.8783743686e-02,
     .baro_altitude_b = 8.1489591735e-03,
     .baro_altitude_tp = 0.050000,
+    .gravity_sigma = 5.0e-04,  // ~5x (accel_noise / g) with inflation for double-counting
+};
+
+// Parameters matched to sim sensor noise models (sensors_impl.hpp):
+//   gyro white noise:  0.001 rad/s,  bias walk: 0.0001 rad/s
+//   accel white noise: 0.05  m/s²,   bias walk: 0.001  m/s²
+//   baro white noise:  0.3   m,       bias walk: 0.01   m
+inline constexpr EkfErrorParameters SIM_DATA_PARAMS =
+{
+    .sampling_freq = 1000.0,
+    .gyro_x_n  = 1.0e-03,  .gyro_x_b  = 1.0e-04,  .gyro_x_tp  = 100.0,
+    .gyro_y_n  = 1.0e-03,  .gyro_y_b  = 1.0e-04,  .gyro_y_tp  = 100.0,
+    .gyro_z_n  = 1.0e-03,  .gyro_z_b  = 1.0e-04,  .gyro_z_tp  = 100.0,
+    .accel_x_n = 5.0e-02,  .accel_x_b = 1.0e-03,  .accel_x_tp = 100.0,
+    .accel_y_n = 5.0e-02,  .accel_y_b = 1.0e-03,  .accel_y_tp = 100.0,
+    .accel_z_n = 5.0e-02,  .accel_z_b = 1.0e-03,  .accel_z_tp = 100.0,
+    .baro_altitude_n = 3.0e-01,  .baro_altitude_b = 1.0e-02,  .baro_altitude_tp = 10.0,
+    .gravity_sigma = 3.0e-03,  // below (accel_noise / g = 5.1e-03) — tuned for tracking bandwidth
 };
 
 #endif // TUNED_EKF_PARAMS_H

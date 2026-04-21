@@ -47,9 +47,10 @@ public:
     void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) override;
     void update_barometer(double altitude, double R_var) override;
     void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R) override;
+    void update_gravity(const Eigen::Vector3d& f_body);
 
     // === IObserver interface (high-level sensor feed) ===
-    
+
     void feed_imu(const sensors::ImuMeasurement& imu) override;
     void feed_mag(const sensors::MagMeasurement& mag) override;
     void feed_baro(const sensors::BaroMeasurement& baro) override;
@@ -97,8 +98,10 @@ private:
     Eigen::Vector3d last_omega_ = Eigen::Vector3d::Zero();  // From last IMU feed
     double last_imu_dt_ = 0.01;                              // Time since last predict
     uint64_t last_imu_timestamp_us_ = 0;
+    uint64_t last_gravity_update_us_ = 0;                    // Rate-limit gravity aiding
 
-    double baro_noise_var_ = 1.0;  // Measurement noise variance [m²], set from params
+    double baro_noise_var_ = 1.0;     // Measurement noise variance [m²], set from params
+    double gravity_noise_var_ = 1e-4; // Gravity aiding R per axis, set from params
 
     // Helpers
     void inject_error(const ErrorVector& dx);
