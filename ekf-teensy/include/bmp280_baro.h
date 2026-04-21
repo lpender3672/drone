@@ -12,7 +12,7 @@
  * BMP280 barometer sensor implementation for Teensy.
  * Provides pressure, temperature, and altitude readings.
  */
-class BMP280Baro : public sensors::Sensor<sensors::BaroReading>, public sensors::TeensySensorLogger {
+class BMP280Baro : public sensors::Sensor<sensors::BaroReading>, public sensors::SensorTiming {
 private:
     shared::IObserverWithBiases* observer_;
     bool ref_set_ = false;
@@ -30,7 +30,6 @@ private:
 public:
     BMP280Baro(shared::IObserverWithBiases* observer, uint32_t interval_ms = 50)
         : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
-          TeensySensorLogger("Baro"),
           observer_(observer) {}
 
     void set_reference_pressure(float pressure_pa) {
@@ -113,7 +112,7 @@ public:
 
         const float p_pa = bmp_.readPressure();
         const float temp_c = bmp_.readTemperature();
-        
+
         if (p_pa <= 0.0f) {
             endTiming();
             return false;
@@ -126,7 +125,6 @@ public:
 
         const float alt_relative = altitudeFromPressurePa(p_pa, p0_pa_);
 
-        // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.pressure_pa = p_pa;
         latest_reading_.temperature_c = temp_c;
@@ -137,20 +135,7 @@ public:
 
         observer_->feed_baro(latest_reading_);
 
-        // Log data to SD card if enabled
-        struct BaroLogSample {
-            float alt_relative_m;
-            float pressure_pa;
-            float temp_c;
-        } sample;
-        sample.alt_relative_m = alt_relative;
-        sample.pressure_pa = p_pa;
-        sample.temp_c = temp_c;
-
         endTiming();
-
-        uint32_t now_ms = current_time_us / 1000;
-        saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
         return true;
     }

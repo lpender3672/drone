@@ -12,7 +12,7 @@
  * BNO055 IMU sensor implementation for Teensy.
  * Provides accelerometer and gyroscope readings from the BNO055 chip.
  */
-class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::TeensySensorLogger {
+class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055 bno_;
     shared::IObserverWithBiases* observer_;
@@ -20,7 +20,6 @@ private:
 public:
     BNO055Imu(shared::IObserverWithBiases* observer, uint32_t interval_ms = 10)
         : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
-          TeensySensorLogger("IMU"),
           bno_(55, 0x28), observer_(observer) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
@@ -47,7 +46,6 @@ public:
         bno_.getEvent(&accel, Adafruit_BNO055::VECTOR_ACCELEROMETER);
         bno_.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
 
-        // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.acc = Eigen::Vector3d(
             accel.acceleration.x,
@@ -63,23 +61,7 @@ public:
 
         observer_->feed_imu(latest_reading_);
 
-        // Log data to SD card if enabled
-        struct ImuLogSample {
-            float acc_g[3];
-            float gyro_rads[3];
-        } sample;
-
-        sample.acc_g[0] = accel.acceleration.x / sensors::GRAVITY_MS2;
-        sample.acc_g[1] = accel.acceleration.y / sensors::GRAVITY_MS2;
-        sample.acc_g[2] = accel.acceleration.z / sensors::GRAVITY_MS2;
-        sample.gyro_rads[0] = gyro.gyro.x;
-        sample.gyro_rads[1] = gyro.gyro.y;
-        sample.gyro_rads[2] = gyro.gyro.z;
-
         endTiming();
-
-        uint32_t now_ms = current_time_us / 1000;
-        saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
         return true;
     }

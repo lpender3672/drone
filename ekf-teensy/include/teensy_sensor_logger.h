@@ -7,7 +7,7 @@
 #include <string.h>
 
 #ifndef SENSORBASE_SAVE_MAX_BYTES
-#define SENSORBASE_SAVE_MAX_BYTES 32
+#define SENSORBASE_SAVE_MAX_BYTES 128
 #endif
 
 #ifndef SENSORBASE_LOG_PATH_MAX
@@ -25,18 +25,43 @@
 namespace sensors {
 
 /**
- * Teensy-specific sensor logger base class.
- * Provides SD card logging functionality for Teensy platform sensors.
- * This is a mixin class that adds logging capabilities without inheriting from Sensor.
+ * Mixin for per-sensor execution timing and update rate tracking.
+ * Separate from SD logging so drivers stay lean.
  */
-class TeensySensorLogger {
+class SensorTiming {
 protected:
-    const char* name_ = nullptr;
-
     uint32_t last_exec_us_ = 0;
     uint32_t max_exec_us_ = 0;
     uint32_t timing_start_ = 0;
     uint32_t updates_since_report_ = 0;
+
+    void startTiming() { timing_start_ = micros(); }
+
+    void endTiming() {
+        last_exec_us_ = micros() - timing_start_;
+        if (last_exec_us_ > max_exec_us_) max_exec_us_ = last_exec_us_;
+    }
+
+    void markUpdated(uint32_t /*now_us*/) { updates_since_report_++; }
+
+public:
+    uint32_t consumeUpdatesSinceReport() {
+        const uint32_t n = updates_since_report_;
+        updates_since_report_ = 0;
+        return n;
+    }
+
+    uint32_t lastExecUs() const { return last_exec_us_; }
+    uint32_t maxExecUs() const { return max_exec_us_; }
+};
+
+/**
+ * Standalone SD card logger for sensor data.
+ * Instantiated in main.cpp — one per sensor — rather than mixed into drivers.
+ */
+class TeensySensorLogger : public ILogger {
+private:
+    const char* name_ = nullptr;
 
     File log_file_;
     bool log_prepared_ = false;
@@ -50,13 +75,6 @@ protected:
     inline static bool sd_ok_ = false;
     inline static uint8_t sd_cs_pin_ = SENSORBASE_SD_DEFAULT_CS;
 
-    void startTiming() { timing_start_ = micros(); }
-
-    void endTiming() {
-        last_exec_us_ = micros() - timing_start_;
-        if (last_exec_us_ > max_exec_us_) max_exec_us_ = last_exec_us_;
-    }
-
     void buildLogPath(char* out, size_t out_len) const {
         if (out == nullptr || out_len == 0) return;
         out[0] = '\0';
@@ -67,12 +85,10 @@ protected:
         }
 
         if (name_[0] == '/') {
-            // Treat name_ as explicit path.
             snprintf(out, out_len, "%s", name_);
             return;
         }
 
-        // Default: per-sensor file at root with .bin extension.
         snprintf(out, out_len, "/%s.bin", name_);
     }
 
@@ -114,7 +130,26 @@ protected:
         }
     }
 
-    void saveBytesIfEnabled(uint32_t now_ms, const void* data, size_t len) {
+public:
+    bool save_to_sd = false;
+    bool flush_each_record = false;
+    uint32_t flush_interval_ms = 1000;
+    bool overwrite_on_start = true;
+
+    explicit TeensySensorLogger(const char* name) : name_(name) {}
+
+    virtual ~TeensySensorLogger() = default;
+
+    static bool initSd(uint8_t cs_pin = SENSORBASE_SD_DEFAULT_CS) {
+        sd_cs_pin_ = cs_pin;
+        sd_initialized_ = true;
+        sd_ok_ = SD.begin(sd_cs_pin_);
+        return sd_ok_;
+    }
+
+    static bool sdOk() { return sd_ok_; }
+
+    void logBytes(uint32_t now_ms, const void* data, size_t len) {
         if (!save_to_sd) return;
         if (!ensureLogFileOpen()) return;
 
@@ -135,7 +170,6 @@ protected:
 
         const size_t record_bytes = sizeof(hdr) + write_len;
 
-        // If this record won't fit, flush buffered bytes first.
         if (record_bytes > LOG_BUFFER_BYTES) {
             flushLogBuffer(true);
             log_file_.write(reinterpret_cast<const uint8_t*>(&hdr), sizeof(hdr));
@@ -161,40 +195,16 @@ protected:
         }
 
         const uint32_t now_flush_ms = millis();
-        const bool time_to_flush = (flush_interval_ms > 0) && 
+        const bool time_to_flush = (flush_interval_ms > 0) &&
                                    ((now_flush_ms - last_sd_file_flush_ms_) >= flush_interval_ms);
         if (flush_each_record || time_to_flush) {
             flushLogBuffer(true);
         }
     }
 
-    template <typename T>
-    void saveValueIfEnabled(uint32_t now_ms, const T& value) {
-        saveBytesIfEnabled(now_ms, &value, sizeof(T));
+    void write(uint32_t now_ms, const void* data, size_t len) override {
+        logBytes(now_ms, data, len);
     }
-
-    void markUpdated(uint32_t /*now_us*/) {
-        updates_since_report_++;
-    }
-
-public:
-    bool save_to_sd = false;
-    bool flush_each_record = false;
-    uint32_t flush_interval_ms = 1000;
-    bool overwrite_on_start = true;
-
-    explicit TeensySensorLogger(const char* name) : name_(name) {}
-
-    virtual ~TeensySensorLogger() = default;
-
-    static bool initSd(uint8_t cs_pin = SENSORBASE_SD_DEFAULT_CS) {
-        sd_cs_pin_ = cs_pin;
-        sd_initialized_ = true;
-        sd_ok_ = SD.begin(sd_cs_pin_);
-        return sd_ok_;
-    }
-
-    static bool sdOk() { return sd_ok_; }
 
     void closeLogFile() {
         if (log_file_) {
@@ -209,15 +219,6 @@ public:
         if (!ensureLogFileOpen()) return;
         flushLogBuffer(true);
     }
-
-    uint32_t consumeUpdatesSinceReport() {
-        const uint32_t n = updates_since_report_;
-        updates_since_report_ = 0;
-        return n;
-    }
-
-    uint32_t lastExecUs() const { return last_exec_us_; }
-    uint32_t maxExecUs() const { return max_exec_us_; }
 };
 
 }  // namespace sensors
