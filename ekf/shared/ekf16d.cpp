@@ -50,6 +50,8 @@ EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NO
     const double B_baro  = p.baro_altitude_b;
     const double Tp_baro = p.baro_altitude_tp;
 
+    baro_noise_var_ = N_baro * N_baro;
+
     // --- Gauss–Markov time constants ---
     tau_g_      = Tp_gyro / 1.89;
     tau_a_      = Tp_acc  / 1.89;
@@ -365,12 +367,7 @@ void EKF16d::feed_mag(const sensors::MagMeasurement& mag) {
 
 void EKF16d::feed_baro(const sensors::BaroMeasurement& baro) {
     if (!baro.valid) return;
-    
-    // Default barometer noise variance
-    // TODO: Make configurable
-    double R_var = 1.0;
-    
-    update_barometer(baro.altitude_m, R_var);
+    update_barometer(baro.altitude_m, baro_noise_var_);
 }
 
 void EKF16d::feed_gnss(const sensors::GnssMeasurement& gnss) {
@@ -402,9 +399,8 @@ void EKF16d::feed_gnss(const sensors::GnssMeasurement& gnss) {
 
     update_gnss_position(pos_geo, R_pos);
 
-    // Velocity update
-    double vel_var = 0.1;
-    update_gnss_velocity(gnss.velocity_ned, Eigen::Matrix3d::Identity() * vel_var);
+    // Velocity update — 0.1 m/s std → var = 0.01
+    update_gnss_velocity(gnss.velocity_ned, Eigen::Matrix3d::Identity() * 0.01);
 }
 
 shared::StateWithBiases EKF16d::output() const {

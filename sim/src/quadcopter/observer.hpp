@@ -18,11 +18,13 @@ public:
         , ekf_(params)
         , imu_input_("imu")
         , gnss_input_("gnss")
+        , baro_input_("baro")
         , output_("state")
     {}
 
     InputPort<ImuData>&        imu_input()  { return imu_input_; }
     InputPort<GnssData>&       gnss_input() { return gnss_input_; }
+    InputPort<BaroData>&       baro_input() { return baro_input_; }
     OutputPort<ObservedState>& output()     { return output_; }
 
     // Must match the origin set on GpsSensor
@@ -74,15 +76,13 @@ public:
     bool update(uint64_t current_time_us) override {
         if (!is_due(current_time_us)) return false;
 
-        // Compute dt BEFORE mark_updated: get_dt_us uses last_update_time_us_
-        double dt = get_dt_us(current_time_us) * 1e-6;
         mark_updated(current_time_us);
 
         sensors::ImuMeasurement imu = static_cast<const sensors::ImuMeasurement&>(imu_input_.value);
         imu.valid = true;
 
         if (imu.acc.squaredNorm() > 1.0) {
-            ekf_.predict(imu, dt);
+            ekf_.feed_imu(imu);
         }
 
         // Feed GNSS only when a new reading arrives (timestamp changed)
@@ -94,11 +94,16 @@ public:
             }
         }
 
-        shared::ObservedState ekf_out = ekf_.output();
-        // output() uses last_omega_ which is only set via feed_imu(); use gyro directly
-        if (imu.acc.squaredNorm() > 1.0) {
-            ekf_out.angular_velocity = imu.gyro - ekf_.bg();
+        // Feed baro only when a new reading arrives
+        if (baro_input_.connected && baro_updates_enabled_) {
+            uint64_t baro_ts = baro_input_.value.timestamp();
+            if (baro_ts != last_baro_ts_ && baro_ts > 0) {
+                ekf_.feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.value));
+                last_baro_ts_ = baro_ts;
+            }
         }
+
+        shared::ObservedState ekf_out = ekf_.output();
         ekf_out.valid = true;
         static_cast<shared::ObservedState&>(output_.value) = ekf_out;
 
@@ -107,13 +112,17 @@ public:
 
     EKF16d& ekf() { return ekf_; }
     void set_gnss_enabled(bool v) { gnss_updates_enabled_ = v; }
+    void set_baro_enabled(bool v) { baro_updates_enabled_ = v; }
 
     EKF16d              ekf_;
     InputPort<ImuData>  imu_input_;
     InputPort<GnssData> gnss_input_;
+    InputPort<BaroData> baro_input_;
     OutputPort<ObservedState> output_;
-    uint64_t last_gnss_ts_       = 0;
+    uint64_t last_gnss_ts_        = 0;
+    uint64_t last_baro_ts_        = 0;
     bool     gnss_updates_enabled_ = true;
+    bool     baro_updates_enabled_ = true;
     double   origin_lat_deg_ = 52.2053;
     double   origin_lon_deg_ =  0.1218;
     double   origin_alt_m_   = 10.0;

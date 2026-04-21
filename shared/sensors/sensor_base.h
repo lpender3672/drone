@@ -74,6 +74,22 @@ public:
         new_reading_available_ = false;
     }
 
+    // Returns the latest reading and clears the new-reading flag atomically.
+    // Returns nullopt if no new reading is available since the last consume.
+    std::optional<ReadingType> consume_reading() {
+        if (!new_reading_available_) return std::nullopt;
+        new_reading_available_ = false;
+        return latest_reading_;
+    }
+
+    void log_to(ILogger& logger, uint32_t now_ms) override {
+        auto r = consume_reading();
+        if (!r) return;
+        double arr[ReadingType::DataSize];
+        r->to_array(arr);
+        logger.write(now_ms, arr, sizeof(arr));
+    }
+
     // Accessors
     const char* name() const override { return name_; }
     uint32_t interval_us() const { return interval_us_; }

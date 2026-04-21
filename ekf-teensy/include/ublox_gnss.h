@@ -13,7 +13,7 @@
  * u-blox GNSS sensor implementation for Teensy.
  * Provides position and velocity measurements from u-blox GPS modules.
  */
-class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::TeensySensorLogger {
+class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::SensorTiming {
 private:
     SFE_UBLOX_GNSS gnss_;
     shared::IObserverWithBiases* observer_;
@@ -25,7 +25,6 @@ private:
 public:
     UbloxGnss(shared::IObserverWithBiases* observer, uint32_t interval_ms = 100)
         : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000),
-          TeensySensorLogger("GNSS"),
           observer_(observer) {}
 
     bool initialize() override {
@@ -61,7 +60,6 @@ public:
         const double lon = gnss_.getLongitude() * 1e-7;
         const double alt = gnss_.getAltitude() * 1e-3;
 
-        // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.latitude_deg = lat;
         latest_reading_.longitude_deg = lon;
@@ -74,7 +72,7 @@ public:
         latest_reading_.num_satellites = gnss_.getSIV();
         latest_reading_.hdop = gnss_.getHorizontalDOP() * 0.01f;
         latest_reading_.vdop = gnss_.getVerticalDOP() * 0.01f;
-        latest_reading_.h_accuracy_m = gnss_.getHorizontalAccuracy() * 1e-4f;  // 0.1mm units → m
+        latest_reading_.h_accuracy_m = gnss_.getHorizontalAccuracy() * 1e-4f;
         latest_reading_.v_accuracy_m = gnss_.getVerticalAccuracy()   * 1e-4f;
         latest_reading_.valid = true;
 
@@ -82,25 +80,7 @@ public:
 
         observer_->feed_gnss(latest_reading_);
 
-        // Log data to SD card if enabled
-        struct GnssLogSample {
-            float pos[3];
-            float vel[3];
-            uint8_t fix;
-        } sample;
-
-        sample.pos[0] = static_cast<float>(lat);
-        sample.pos[1] = static_cast<float>(lon);
-        sample.pos[2] = static_cast<float>(alt);
-        sample.vel[0] = static_cast<float>(latest_reading_.velocity_ned.x());
-        sample.vel[1] = static_cast<float>(latest_reading_.velocity_ned.y());
-        sample.vel[2] = static_cast<float>(latest_reading_.velocity_ned.z());
-        sample.fix = fix;
-
         endTiming();
-
-        uint32_t now_ms = current_time_us / 1000;
-        saveValueIfEnabled(now_ms, sample);
         markUpdated(current_time_us);
         return true;
     }
