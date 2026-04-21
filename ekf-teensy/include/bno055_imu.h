@@ -6,7 +6,7 @@
 #include <sensor_constants.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
-#include <ekf.h>
+#include <observer.h>
 
 /**
  * BNO055 IMU sensor implementation for Teensy.
@@ -15,13 +15,13 @@
 class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::TeensySensorLogger {
 private:
     Adafruit_BNO055 bno_;
-    IEKF* ekf_;
+    shared::IObserverWithBiases* observer_;
 
 public:
-    BNO055Imu(IEKF* ekf, uint32_t interval_ms = 10)
+    BNO055Imu(shared::IObserverWithBiases* observer, uint32_t interval_ms = 10)
         : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
           TeensySensorLogger("IMU"),
-          bno_(55, 0x28), ekf_(ekf) {}
+          bno_(55, 0x28), observer_(observer) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
 
@@ -47,12 +47,6 @@ public:
         bno_.getEvent(&accel, Adafruit_BNO055::VECTOR_ACCELEROMETER);
         bno_.getEvent(&gyro, Adafruit_BNO055::VECTOR_GYROSCOPE);
 
-        static uint32_t last_time_us = 0;
-        if (last_time_us == 0) last_time_us = current_time_us;
-        
-        float dt = (current_time_us - last_time_us) * 1e-6f;
-        last_time_us = current_time_us;
-
         // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.acc = Eigen::Vector3d(
@@ -67,19 +61,12 @@ public:
 
         new_reading_available_ = true;
 
-        // Update EKF if valid time step
-        if (dt > 0.0f && dt < 0.1f) {
-            ImuMeasurement msg;
-            msg.acc = latest_reading_.acc / sensors::GRAVITY_MS2;  // Convert to g's for EKF
-            msg.gyro = latest_reading_.gyro;
-            // ekf_->predict(msg, dt);  // Uncomment when needed
-        }
+        observer_->feed_imu(latest_reading_);
 
         // Log data to SD card if enabled
         struct ImuLogSample {
             float acc_g[3];
             float gyro_rads[3];
-            float dt;
         } sample;
 
         sample.acc_g[0] = accel.acceleration.x / sensors::GRAVITY_MS2;
@@ -88,7 +75,6 @@ public:
         sample.gyro_rads[0] = gyro.gyro.x;
         sample.gyro_rads[1] = gyro.gyro.y;
         sample.gyro_rads[2] = gyro.gyro.z;
-        sample.dt = dt;
 
         endTiming();
 

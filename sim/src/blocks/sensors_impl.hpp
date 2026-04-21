@@ -66,8 +66,8 @@ protected:
         Mat3 R_bn = true_state.R_bn();
         Vec3 gravity_vec(0.0, 0.0, sensors::GRAVITY_MS2);
         
-        // Specific force (what accelerometer measures)
-        Vec3 specific_force = R_bn * (-gravity_vec);
+        // Specific force: R_bn * (a_ned - g_ned); g_ned points down in NED
+        Vec3 specific_force = R_bn * (true_state.linear_accel - gravity_vec);
         
         Vec3 accel_noise(
             this->gaussian_noise(noise_params_.accel_noise_stddev),

@@ -5,7 +5,7 @@
 #include <sensor_readings.h>
 #include <sensor_constants.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
-#include <ekf.h>
+#include <observer.h>
 
 #include "teensy_sensor_logger.h"
 
@@ -16,21 +16,17 @@
 class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::TeensySensorLogger {
 private:
     SFE_UBLOX_GNSS gnss_;
-    IEKF* ekf_;
-    
-    // Reference position for local frame
-    double lat_ref_ = 0.0, lon_ref_ = 0.0, alt_ref_ = 0.0;
-    bool ref_set_ = false;
-    
+    shared::IObserverWithBiases* observer_;
+
     // Noise parameters
     double pos_std_ = 2.0;  // meters
     double vel_std_ = 0.1;  // m/s
 
 public:
-    UbloxGnss(IEKF* ekf, uint32_t interval_ms = 100)
+    UbloxGnss(shared::IObserverWithBiases* observer, uint32_t interval_ms = 100)
         : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000),
           TeensySensorLogger("GNSS"),
-          ekf_(ekf) {}
+          observer_(observer) {}
 
     bool initialize() override {
         if (!gnss_.begin()) {
@@ -65,15 +61,6 @@ public:
         const double lon = gnss_.getLongitude() * 1e-7;
         const double alt = gnss_.getAltitude() * 1e-3;
 
-        // Set reference on first fix
-        if (!ref_set_) {
-            lat_ref_ = lat;
-            lon_ref_ = lon;
-            alt_ref_ = alt;
-            ref_set_ = true;
-            Serial.printf("GNSS ref set: %.6f, %.6f, %.1f\n", lat, lon, alt);
-        }
-
         // Update the standardized reading structure
         latest_reading_.timestamp_us = current_time_us;
         latest_reading_.latitude_deg = lat;
@@ -87,20 +74,13 @@ public:
         latest_reading_.num_satellites = gnss_.getSIV();
         latest_reading_.hdop = gnss_.getHorizontalDOP() * 0.01f;
         latest_reading_.vdop = gnss_.getVerticalDOP() * 0.01f;
+        latest_reading_.h_accuracy_m = gnss_.getHorizontalAccuracy() * 1e-4f;  // 0.1mm units → m
+        latest_reading_.v_accuracy_m = gnss_.getVerticalAccuracy()   * 1e-4f;
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
 
-        // Update EKF
-        Eigen::Vector3d pos_ned(lat, lon, alt);
-        const Eigen::Vector3d& vel_ned = latest_reading_.velocity_ned;
-
-        // Position covariance (diagonal)
-        Eigen::Matrix3d R_pos = Eigen::Matrix3d::Identity() * (pos_std_ * pos_std_);
-        Eigen::Matrix3d R_vel = Eigen::Matrix3d::Identity() * (vel_std_ * vel_std_);
-
-        ekf_->update_gnss_position(pos_ned, R_pos);
-        ekf_->update_gnss_velocity(vel_ned, R_vel);
+        observer_->feed_gnss(latest_reading_);
 
         // Log data to SD card if enabled
         struct GnssLogSample {
@@ -109,12 +89,12 @@ public:
             uint8_t fix;
         } sample;
 
-        sample.pos[0] = static_cast<float>(pos_ned.x());
-        sample.pos[1] = static_cast<float>(pos_ned.y());
-        sample.pos[2] = static_cast<float>(pos_ned.z());
-        sample.vel[0] = static_cast<float>(vel_ned.x());
-        sample.vel[1] = static_cast<float>(vel_ned.y());
-        sample.vel[2] = static_cast<float>(vel_ned.z());
+        sample.pos[0] = static_cast<float>(lat);
+        sample.pos[1] = static_cast<float>(lon);
+        sample.pos[2] = static_cast<float>(alt);
+        sample.vel[0] = static_cast<float>(latest_reading_.velocity_ned.x());
+        sample.vel[1] = static_cast<float>(latest_reading_.velocity_ned.y());
+        sample.vel[2] = static_cast<float>(latest_reading_.velocity_ned.z());
         sample.fix = fix;
 
         endTiming();
@@ -125,7 +105,6 @@ public:
         return true;
     }
 
-    bool hasReference() const { return ref_set_; }
     void setPosStd(double std) { pos_std_ = std; }
     void setVelStd(double std) { vel_std_ = std; }
 };

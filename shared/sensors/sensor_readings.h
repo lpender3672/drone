@@ -116,13 +116,13 @@ struct BaroMeasurement {
 };
 
 /**
- * GNSS measurement: [lat, lon, alt, vel(3), fix, sats, hdop, vdop, timestamp, valid] = 12 elements
+ * GNSS measurement: [lat, lon, alt, vel(3), fix, sats, hdop, vdop, h_acc, v_acc, timestamp, valid] = 14 elements
  */
 struct GnssMeasurement {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
-    static constexpr int DataSize = 12;
-    
+
+    static constexpr int DataSize = 14;
+
     uint64_t timestamp_us = 0;
     double latitude_deg = 0;
     double longitude_deg = 0;
@@ -132,6 +132,8 @@ struct GnssMeasurement {
     uint8_t num_satellites = 0;
     float hdop = 99.9f;
     float vdop = 99.9f;
+    float h_accuracy_m = 0.0f;  // 1-sigma horizontal accuracy from receiver (0 = use hdop)
+    float v_accuracy_m = 0.0f;  // 1-sigma vertical accuracy from receiver (0 = use vdop)
     bool valid = false;
 
     void to_array(double* data) const {
@@ -145,8 +147,10 @@ struct GnssMeasurement {
         data[7] = static_cast<double>(num_satellites);
         data[8] = static_cast<double>(hdop);
         data[9] = static_cast<double>(vdop);
-        data[10] = static_cast<double>(timestamp_us);
-        data[11] = valid ? 1.0 : 0.0;
+        data[10] = static_cast<double>(h_accuracy_m);
+        data[11] = static_cast<double>(v_accuracy_m);
+        data[12] = static_cast<double>(timestamp_us);
+        data[13] = valid ? 1.0 : 0.0;
     }
 
     void from_array(const double* data) {
@@ -160,8 +164,10 @@ struct GnssMeasurement {
         num_satellites = static_cast<uint8_t>(data[7]);
         hdop = static_cast<float>(data[8]);
         vdop = static_cast<float>(data[9]);
-        timestamp_us = static_cast<uint64_t>(data[10]);
-        valid = data[11] > 0.5;
+        h_accuracy_m = static_cast<float>(data[10]);
+        v_accuracy_m = static_cast<float>(data[11]);
+        timestamp_us = static_cast<uint64_t>(data[12]);
+        valid = data[13] > 0.5;
     }
 
     void set_lla(const Vec3& lla) {
@@ -178,12 +184,9 @@ struct GnssMeasurement {
     void set_num_satellites(uint8_t sats) {
         num_satellites = sats;
     }
-    void set_hdop(float hd) {
-        hdop = hd;
-    }
-    void set_vdop(float vd) {
-        vdop = vd;
-    }
+    void set_hdop(float hd) { hdop = hd; }
+    void set_vdop(float vd) { vdop = vd; }
+    void set_accuracy(float h_m, float v_m) { h_accuracy_m = h_m; v_accuracy_m = v_m; }
 };
 
 using ImuReading = ImuMeasurement;

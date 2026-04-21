@@ -275,6 +275,34 @@ public:
 };
 
 /**
+ * External torque in body frame [Tx, Ty, Tz] in N·m.
+ */
+class BodyTorque : public InterBlockData<3> {
+public:
+    BodyTorque() = default;
+    explicit BodyTorque(const Vec3& t) { data_[0]=t.x(); data_[1]=t.y(); data_[2]=t.z(); }
+
+    Vec3 torque() const { return Vec3(data_[0], data_[1], data_[2]); }
+    void set_torque(const Vec3& t) { data_[0]=t.x(); data_[1]=t.y(); data_[2]=t.z(); }
+
+    std::string type_name() const override { return "BodyTorque"; }
+};
+
+/**
+ * External force vector in NED frame [Fx, Fy, Fz] in Newtons.
+ */
+class NedForce : public InterBlockData<3> {
+public:
+    NedForce() = default;
+    explicit NedForce(const Vec3& f) { data_[0]=f.x(); data_[1]=f.y(); data_[2]=f.z(); }
+
+    Vec3 force() const { return Vec3(data_[0], data_[1], data_[2]); }
+    void set_force(const Vec3& f) { data_[0]=f.x(); data_[1]=f.y(); data_[2]=f.z(); }
+
+    std::string type_name() const override { return "NedForce"; }
+};
+
+/**
  * Empty signal for blocks with no input.
  */
 class NoInput : public InterBlockData<0> {

@@ -5,7 +5,7 @@
 #include <sensor_readings.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BMP280.h>
-#include <ekf.h>
+#include <observer.h>
 #include <Wire.h>
 
 /**
@@ -14,8 +14,7 @@
  */
 class BMP280Baro : public sensors::Sensor<sensors::BaroReading>, public sensors::TeensySensorLogger {
 private:
-    IEKF* ekf_;
-    double baro_std_ = 1.0;  // meters
+    shared::IObserverWithBiases* observer_;
     bool ref_set_ = false;
     float p0_pa_ = 101325.0f;  // Standard atmospheric pressure
 
@@ -29,10 +28,10 @@ private:
     }
 
 public:
-    BMP280Baro(IEKF* ekf, uint32_t interval_ms = 50)
+    BMP280Baro(shared::IObserverWithBiases* observer, uint32_t interval_ms = 50)
         : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
           TeensySensorLogger("Baro"),
-          ekf_(ekf) {}
+          observer_(observer) {}
 
     void set_reference_pressure(float pressure_pa) {
         p0_pa_ = pressure_pa;
@@ -117,7 +116,7 @@ public:
         
         if (p_pa <= 0.0f) {
             endTiming();
-            return;
+            return false;
         }
 
         if (!ref_set_) {
@@ -136,21 +135,17 @@ public:
 
         new_reading_available_ = true;
 
-        // Update EKF
-        const double R_var = baro_std_ * baro_std_;
-        ekf_->update_barometer(alt_relative, R_var);
+        observer_->feed_baro(latest_reading_);
 
         // Log data to SD card if enabled
         struct BaroLogSample {
             float alt_relative_m;
             float pressure_pa;
             float temp_c;
-            float var;
         } sample;
         sample.alt_relative_m = alt_relative;
         sample.pressure_pa = p_pa;
         sample.temp_c = temp_c;
-        sample.var = static_cast<float>(R_var);
 
         endTiming();
 
@@ -160,7 +155,6 @@ public:
         return true;
     }
 
-    void setBaroStd(double std) { baro_std_ = std; }
     void resetReference() { ref_set_ = false; }
 };
 
