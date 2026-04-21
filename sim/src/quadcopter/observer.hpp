@@ -76,15 +76,13 @@ public:
     bool update(uint64_t current_time_us) override {
         if (!is_due(current_time_us)) return false;
 
-        // Compute dt BEFORE mark_updated: get_dt_us uses last_update_time_us_
-        double dt = get_dt_us(current_time_us) * 1e-6;
         mark_updated(current_time_us);
 
         sensors::ImuMeasurement imu = static_cast<const sensors::ImuMeasurement&>(imu_input_.value);
         imu.valid = true;
 
         if (imu.acc.squaredNorm() > 1.0) {
-            ekf_.predict(imu, dt);
+            ekf_.feed_imu(imu);
         }
 
         // Feed GNSS only when a new reading arrives (timestamp changed)
@@ -98,7 +96,7 @@ public:
 
         // Feed baro only when a new reading arrives
         if (baro_input_.connected && baro_updates_enabled_) {
-            uint64_t baro_ts = baro_input_.value.timestamp_us;
+            uint64_t baro_ts = baro_input_.value.timestamp();
             if (baro_ts != last_baro_ts_ && baro_ts > 0) {
                 ekf_.feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.value));
                 last_baro_ts_ = baro_ts;
@@ -106,10 +104,6 @@ public:
         }
 
         shared::ObservedState ekf_out = ekf_.output();
-        // output() uses last_omega_ which is only set via feed_imu(); use gyro directly
-        if (imu.acc.squaredNorm() > 1.0) {
-            ekf_out.angular_velocity = imu.gyro - ekf_.bg();
-        }
         ekf_out.valid = true;
         static_cast<shared::ObservedState&>(output_.value) = ekf_out;
 

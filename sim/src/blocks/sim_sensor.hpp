@@ -55,6 +55,7 @@ public:
 
         ReadingT reading = sample(true_state, current_time_us / 1e6);
         reading.set_timestamp(current_time_us);
+        reading.timestamp_us = current_time_us;
         
         latency_buffer_.push_back(reading);
         

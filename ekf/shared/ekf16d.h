@@ -93,10 +93,12 @@ private:
     Eigen::Vector3d tau_g_;           // Gyro bias correlation time [s]
     double tau_bbaro_;               // Baro bias correlation time [s]
     
-    // Cached sensor data for output() 
+    // Cached sensor data for output()
     Eigen::Vector3d last_omega_ = Eigen::Vector3d::Zero();  // From last IMU feed
     double last_imu_dt_ = 0.01;                              // Time since last predict
-    uint32_t last_imu_timestamp_us_ = 0;
+    uint64_t last_imu_timestamp_us_ = 0;
+
+    double baro_noise_var_ = 1.0;  // Measurement noise variance [m²], set from params
 
     // Helpers
     void inject_error(const ErrorVector& dx);
