@@ -153,4 +153,49 @@ private:
     Vec3 origin_lla_ = Vec3(52.2053, 0.1218, 10.0);  // Default: Cambridge, UK
 };
 
+/**
+ * Barometer sensor model.
+ * Converts true NED z-position to altitude with white noise and bias random walk.
+ */
+template<typename TrueStateT>
+class BaroSensor : public SensorBlock<TrueStateT, BaroData> {
+public:
+    struct NoiseParams {
+        double altitude_noise_stddev = 0.3;   // [m] white noise
+        double bias_stddev           = 0.01;  // [m] bias random walk per sample
+    };
+
+    BaroSensor(const std::string& name = "baro",
+               uint32_t update_period_us = 50000,
+               uint32_t latency_us = 50000)
+        : SensorBlock<TrueStateT, BaroData>(name, update_period_us, latency_us)
+    {}
+
+    void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
+    void set_ground_alt_m(double alt_m) { ground_alt_m_ = alt_m; }
+
+protected:
+    BaroData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        // NED z is positive-down; altitude is positive-up relative to ground
+        const double true_alt = ground_alt_m_ - true_state.position.z();
+
+        bias_ += this->gaussian_noise(noise_params_.bias_stddev);
+        const double meas_alt = true_alt + bias_ + this->gaussian_noise(noise_params_.altitude_noise_stddev);
+
+        BaroData reading;
+        reading.altitude_m    = meas_alt;
+        reading.pressure_pa   = 101325.0 * std::pow(1.0 - meas_alt / 44330.0, 5.255);
+        reading.temperature_c = 15.0 - 0.0065 * meas_alt;
+        reading.valid         = true;
+
+        (void)current_time_us;
+        return reading;
+    }
+
+private:
+    NoiseParams noise_params_;
+    double ground_alt_m_ = 0.0;
+    double bias_         = 0.0;
+};
+
 } // namespace sim

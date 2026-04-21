@@ -34,6 +34,7 @@ int main() {
     auto controller  = sim_runner.add_block(std::make_unique<AttitudePidController>("controller", 1000));
     auto imu_sensor  = sim_runner.add_block(std::make_unique<ImuSensor<TrueState>>("imu", 1000, 1000));
     auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000, 100000));
+    auto baro_sensor = sim_runner.add_block(std::make_unique<BaroSensor<TrueState>>("baro", 50000, 50000));
     auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>("ekf", TEENSY_PTYPE_DATA_PARAMS, 1000));
 
     // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
@@ -70,8 +71,11 @@ int main() {
     init.angular_velocity = Vec3::Zero();
     dynamics->reset(init);
 
+    baro_sensor->set_ground_alt_m(ekf_block->origin_alt_m_);
+
     ekf_block->initialize(init);
     ekf_block->set_gnss_enabled(true);
+    ekf_block->set_baro_enabled(true);
 
     // =========================================
     // Hover reference
@@ -111,13 +115,16 @@ int main() {
         const TrueState& true_state = dynamics->output().get();
         imu_sensor->input().set(true_state);
         gnss_sensor->input().set(true_state);
+        baro_sensor->input().set(true_state);
 
         imu_sensor->update(t);
         gnss_sensor->update(t);
+        baro_sensor->update(t);
 
         // 3. EKF
         ekf_block->imu_input().set(imu_sensor->output().get());
         ekf_block->gnss_input().set(gnss_sensor->output().get());
+        ekf_block->baro_input().set(baro_sensor->output().get());
         ekf_block->update(t);
 
         // 4. Controller (uses EKF estimate)
