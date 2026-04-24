@@ -1,21 +1,26 @@
 #pragma once
 
 #include <cmath>
+#include <memory>
+
 #include "../core/block.hpp"
 #include "../data/sensor_reading.hpp"
 #include "state.hpp"
-#include "ekf16d.h"
+#include "../../../shared/observer.h"
 
 namespace sim {
 namespace quadcopter {
 
+// Sim-side scheduling wrapper around an abstract nav observer. Pick the concrete
+// observer at construction time (EKF16d, future EKF16f-adapter, AHRS-7, etc.);
+// this block only knows the INavObserver interface.
 class QuadrotorEkfBlock : public Block {
 public:
     QuadrotorEkfBlock(const std::string& name,
-                      const EkfErrorParameters& params,
+                      std::unique_ptr<shared::INavObserver> observer,
                       uint32_t update_period_us = 1000)
         : Block(name, update_period_us)
-        , ekf_(params)
+        , observer_(std::move(observer))
         , imu_input_("imu")
         , gnss_input_("gnss")
         , baro_input_("baro")
@@ -23,11 +28,11 @@ public:
         , output_("state")
     {}
 
-    InputPort<ImuData>&        imu_input()  { return imu_input_; }
-    InputPort<GnssData>&       gnss_input() { return gnss_input_; }
-    InputPort<BaroData>&       baro_input() { return baro_input_; }
-    InputPort<MagData>&        mag_input()  { return mag_input_; }
-    OutputPort<ObservedState>& output()     { return output_; }
+    InputPort<ImuData>&          imu_input()  { return imu_input_; }
+    InputPort<GnssData>&         gnss_input() { return gnss_input_; }
+    InputPort<BaroData>&         baro_input() { return baro_input_; }
+    InputPort<MagData>&          mag_input()  { return mag_input_; }
+    OutputPort<NavigationState>& output()     { return output_; }
 
     // Must match the origin set on GpsSensor
     void set_gnss_origin(double lat_deg, double lon_deg, double alt_m) {
@@ -37,110 +42,88 @@ public:
     }
 
     void initialize(const shared::TrueState& state) {
-        // Build nominal state vector: [pos(3), vel(3), q(4), ba(3), bg(3), bbaro(1)]
-        // EKF pos is geodetic (lat_rad, lon_rad, alt_m); convert from NED metres.
+        // Convert sim's local NED state to geodetic NavigationState that the
+        // observer's reset() expects. The observer is responsible for its own
+        // P0 covariance policy.
         constexpr double M_PER_DEG_LAT = 111319.9;
-        double lat_rad = (origin_lat_deg_ + state.position.x() / M_PER_DEG_LAT) * M_PI / 180.0;
-        double m_per_deg_lon = M_PER_DEG_LAT * std::cos(origin_lat_deg_ * M_PI / 180.0);
-        double lon_rad = (origin_lon_deg_ + state.position.y() / m_per_deg_lon) * M_PI / 180.0;
-        double alt_m   = origin_alt_m_ - state.position.z();  // NED z-down → altitude up
+        const double lat_rad = (origin_lat_deg_ + state.position.x() / M_PER_DEG_LAT) * M_PI / 180.0;
+        const double m_per_deg_lon = M_PER_DEG_LAT * std::cos(origin_lat_deg_ * M_PI / 180.0);
+        const double lon_rad = (origin_lon_deg_ + state.position.y() / m_per_deg_lon) * M_PI / 180.0;
+        const double alt_m   = origin_alt_m_ - state.position.z();  // NED z-down → altitude up
 
-        EKF16d::NominalVector x0;
-        x0.setZero();
-        x0(0) = lat_rad;
-        x0(1) = lon_rad;
-        x0(2) = alt_m;
-        x0.segment<3>(3)  = state.velocity;
-        x0(6) = state.attitude.w();
-        x0(7) = state.attitude.x();
-        x0(8) = state.attitude.y();
-        x0(9) = state.attitude.z();
-        // biases start at zero
-
-        // Tight initial covariance — we know the exact starting state.
-        // Large P_vel causes GNSS velocity updates to inject huge spurious
-        // attitude corrections through the P_vel_att coupling.
-        EKF16d::CovMatrix P0;
-        P0.setZero();
-        // pos variance in geodetic units: 1 m / RM ≈ 1.5e-7 rad for horizontal, 1 m² for alt
-        P0(0,0) = 1.0 / (6335439.0 * 6335439.0);
-        P0(1,1) = 1.0 / (6378388.0 * 6378388.0);
-        P0(2,2) = 1.0;
-        P0.block<3,3>(3,3)   = Eigen::Matrix3d::Identity() * 1e-4;    // vel: 0.01 m/s
-        P0.block<3,3>(6,6)   = Eigen::Matrix3d::Identity() * 1e-4;    // att: ~0.01 rad (0.6 deg)
-        P0.block<3,3>(9,9)   = Eigen::Matrix3d::Identity() * 1e-6;    // accel bias
-        P0.block<3,3>(12,12) = Eigen::Matrix3d::Identity() * 1e-6;    // gyro bias
-        P0(15,15)            = 1e-4;                                   // baro bias
-
-        ekf_.initialize(x0, P0);
+        shared::NavigationState nav;
+        nav.position = Vec3(lat_rad, lon_rad, alt_m);
+        nav.velocity = state.velocity;
+        nav.attitude = state.attitude;
+        nav.angular_velocity = state.angular_velocity;
+        // biases default to zero
+        observer_->reset(nav);
     }
 
     bool update(uint64_t current_time_us) override {
         if (!is_due(current_time_us)) return false;
-
         mark_updated(current_time_us);
 
         sensors::ImuMeasurement imu = static_cast<const sensors::ImuMeasurement&>(imu_input_.value);
         imu.valid = true;
 
         if (imu.acc.squaredNorm() > 1.0) {
-            ekf_.feed_imu(imu);
+            observer_->feed_imu(imu);
         }
 
-        // Feed GNSS only when a new reading arrives (timestamp changed)
+        // Feed GNSS / baro / mag only when the reading's timestamp advances.
         if (gnss_input_.connected && gnss_updates_enabled_) {
             uint64_t gnss_ts = gnss_input_.value.timestamp();
             if (gnss_ts != last_gnss_ts_ && gnss_ts > 0) {
-                ekf_.feed_gnss(static_cast<const sensors::GnssMeasurement&>(gnss_input_.value));
+                observer_->feed_gnss(static_cast<const sensors::GnssMeasurement&>(gnss_input_.value));
                 last_gnss_ts_ = gnss_ts;
             }
         }
 
-        // Feed baro only when a new reading arrives
         if (baro_input_.connected && baro_updates_enabled_) {
             uint64_t baro_ts = baro_input_.value.timestamp();
             if (baro_ts != last_baro_ts_ && baro_ts > 0) {
-                ekf_.feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.value));
+                observer_->feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.value));
                 last_baro_ts_ = baro_ts;
             }
         }
 
-        // Feed mag only when a new reading arrives
         if (mag_input_.connected && mag_updates_enabled_) {
             uint64_t mag_ts = mag_input_.value.timestamp();
             if (mag_ts != last_mag_ts_ && mag_ts > 0) {
-                ekf_.feed_mag(static_cast<const sensors::MagMeasurement&>(mag_input_.value));
+                observer_->feed_mag(static_cast<const sensors::MagMeasurement&>(mag_input_.value));
                 last_mag_ts_ = mag_ts;
             }
         }
 
-        shared::ObservedState ekf_out = ekf_.output();
-        ekf_out.valid = true;
-        static_cast<shared::ObservedState&>(output_.value) = ekf_out;
-
+        shared::NavigationState out = observer_->output();
+        out.valid = true;
+        static_cast<shared::NavigationState&>(output_.value) = out;
         return true;
     }
 
-    EKF16d& ekf() { return ekf_; }
+    shared::INavObserver& observer() { return *observer_; }
     void set_gnss_enabled(bool v) { gnss_updates_enabled_ = v; }
     void set_baro_enabled(bool v) { baro_updates_enabled_ = v; }
     void set_mag_enabled(bool v)  { mag_updates_enabled_  = v; }
 
-    EKF16d              ekf_;
+    double origin_lat_deg_ = 52.2053;
+    double origin_lon_deg_ =  0.1218;
+    double origin_alt_m_   = 10.0;
+
+private:
+    std::unique_ptr<shared::INavObserver> observer_;
     InputPort<ImuData>  imu_input_;
     InputPort<GnssData> gnss_input_;
     InputPort<BaroData> baro_input_;
     InputPort<MagData>  mag_input_;
-    OutputPort<ObservedState> output_;
-    uint64_t last_gnss_ts_        = 0;
-    uint64_t last_baro_ts_        = 0;
-    uint64_t last_mag_ts_         = 0;
+    OutputPort<NavigationState> output_;
+    uint64_t last_gnss_ts_         = 0;
+    uint64_t last_baro_ts_         = 0;
+    uint64_t last_mag_ts_          = 0;
     bool     gnss_updates_enabled_ = true;
     bool     baro_updates_enabled_ = true;
     bool     mag_updates_enabled_  = true;
-    double   origin_lat_deg_ = 52.2053;
-    double   origin_lon_deg_ =  0.1218;
-    double   origin_alt_m_   = 10.0;
 };
 
 } // namespace quadcopter

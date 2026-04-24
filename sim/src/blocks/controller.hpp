@@ -5,10 +5,10 @@
 
 namespace sim {
 
-template<typename ObservedStateT, typename ReferenceT, typename EffortsT>
+template<typename NavigationStateT, typename ReferenceT, typename EffortsT>
 class ControllerBlock : public Block {
 public:
-    using StateType = ObservedStateT;
+    using StateType = NavigationStateT;
     using ReferenceType = ReferenceT;
     using OutputType = EffortsT;
     
@@ -23,8 +23,8 @@ public:
         , output_(output_name)
     {}
     
-    InputPort<ObservedStateT>& state_input() { return state_input_; }
-    const InputPort<ObservedStateT>& state_input() const { return state_input_; }
+    InputPort<NavigationStateT>& state_input() { return state_input_; }
+    const InputPort<NavigationStateT>& state_input() const { return state_input_; }
     
     InputPort<ReferenceT>& reference_input() { return reference_input_; }
     const InputPort<ReferenceT>& reference_input() const { return reference_input_; }
@@ -35,7 +35,7 @@ public:
     virtual void reset() = 0;
 
 protected:
-    InputPort<ObservedStateT> state_input_;
+    InputPort<NavigationStateT> state_input_;
     InputPort<ReferenceT> reference_input_;
     OutputPort<EffortsT> output_;
 };

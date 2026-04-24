@@ -15,10 +15,10 @@
 class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055 bno_;
-    shared::IObserverWithBiases* observer_;
+    shared::INavObserver* observer_;
 
 public:
-    BNO055Imu(shared::IObserverWithBiases* observer, uint32_t interval_ms = 10)
+    BNO055Imu(shared::INavObserver* observer, uint32_t interval_ms = 10)
         : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
           bno_(55, 0x28), observer_(observer) {}
 

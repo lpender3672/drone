@@ -79,8 +79,8 @@ void EKF16d::feed_gnss(const sensors::GnssMeasurement& gnss) {
     update_gnss_velocity(gnss.velocity_ned, Eigen::Matrix3d::Identity() * 0.01);
 }
 
-shared::StateWithBiases EKF16d::output() const {
-    shared::StateWithBiases state;
+shared::NavigationState EKF16d::output() const {
+    shared::NavigationState state;
 
     state.position = pos();
     state.velocity = vel();
@@ -97,7 +97,7 @@ shared::StateWithBiases EKF16d::output() const {
     return state;
 }
 
-void EKF16d::reset(const shared::StateWithBiases& initial) {
+void EKF16d::reset(const shared::NavigationState& initial) {
     NominalVector x0;
     x0.setZero();
 

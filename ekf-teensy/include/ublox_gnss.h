@@ -16,14 +16,14 @@
 class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::SensorTiming {
 private:
     SFE_UBLOX_GNSS gnss_;
-    shared::IObserverWithBiases* observer_;
+    shared::INavObserver* observer_;
 
     // Noise parameters
     double pos_std_ = 2.0;  // meters
     double vel_std_ = 0.1;  // m/s
 
 public:
-    UbloxGnss(shared::IObserverWithBiases* observer, uint32_t interval_ms = 100)
+    UbloxGnss(shared::INavObserver* observer, uint32_t interval_ms = 100)
         : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000),
           observer_(observer) {}
 

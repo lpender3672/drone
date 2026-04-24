@@ -6,7 +6,7 @@ namespace shared {
 /**
  * Abstract controller interface templated on state, reference, and control types.
  * 
- * StateT: Input state type from observer (e.g., StateBase, StateWithBiases)
+ * StateT: Input state type from observer (e.g., StateBase, NavigationState)
  * RefT: Reference/setpoint type (e.g., ReferenceBase or sim::Reference)
  * ControlT: Output control type (e.g., ControlEffort<4>)
  * 

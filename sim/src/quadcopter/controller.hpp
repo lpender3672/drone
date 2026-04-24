@@ -16,7 +16,7 @@ namespace quadcopter {
  * Inner loop: PID rate -> control output
  * Mixer: [thrust, roll, pitch, yaw] -> motor efforts
  */
-class AttitudePidController : public ControllerBlock<shared::ObservedState, AttitudeReference, MotorEfforts> {
+class AttitudePidController : public ControllerBlock<shared::NavigationState, AttitudeReference, MotorEfforts> {
 public:
     struct Params {
         // Attitude (outer) loop - P only
@@ -41,7 +41,7 @@ public:
     }
 
     AttitudePidController(const std::string& name, uint32_t update_period_us = 1000.0)
-        : ControllerBlock<shared::ObservedState, AttitudeReference, MotorEfforts>(
+        : ControllerBlock<shared::NavigationState, AttitudeReference, MotorEfforts>(
             name, "", "", "", update_period_us)
         , mixer_(default_mixer())
     {

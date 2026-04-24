@@ -15,10 +15,10 @@
 class BNO055Mag : public sensors::Sensor<sensors::MagReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
-    shared::IObserverWithBiases* observer_;
+    shared::INavObserver* observer_;
 
 public:
-    BNO055Mag(Adafruit_BNO055* bno, shared::IObserverWithBiases* observer, uint32_t interval_ms = 20)
+    BNO055Mag(Adafruit_BNO055* bno, shared::INavObserver* observer, uint32_t interval_ms = 20)
         : Sensor<sensors::MagReading>("Mag", (uint64_t)interval_ms * 1000),
           bno_(bno), observer_(observer) {}
 

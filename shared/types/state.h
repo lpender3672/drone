@@ -64,21 +64,20 @@ struct TrueState {
 
 
 /**
- * Observed state from estimator.
+ * Output of a navigation filter: vehicle state plus estimated sensor biases.
+ * (Standard term in INS/GPS literature — "navigation solution" or "nav state".)
  */
-struct ObservedState : public TrueState {
+struct NavigationState : public TrueState {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
+
     bool valid = false;
     Vec3 accel_bias = Vec3::Zero();
     Vec3 gyro_bias = Vec3::Zero();
     double baro_bias = 0.0;
-    
-    ObservedState() = default;
-    explicit ObservedState(const TrueState& base) : TrueState(base), valid(true) {}
-};
 
-using StateWithBiases = ObservedState;
+    NavigationState() = default;
+    explicit NavigationState(const TrueState& base) : TrueState(base), valid(true) {}
+};
 
 } // namespace shared
 

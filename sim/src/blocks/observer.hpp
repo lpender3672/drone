@@ -5,13 +5,13 @@
 
 namespace sim {
 
-template<typename SensedStateT, typename ObservedStateT>
-class ObserverBlock : public TypedBlock<SensedStateT, ObservedStateT> {
+template<typename SensedStateT, typename NavigationStateT>
+class ObserverBlock : public TypedBlock<SensedStateT, NavigationStateT> {
 public:
     ObserverBlock(const std::string& name,
-                  std::unique_ptr<shared::IObserver<ObservedStateT>> observer,
+                  std::unique_ptr<shared::IObserver<NavigationStateT>> observer,
                   uint32_t update_period_us)
-        : TypedBlock<SensedStateT, ObservedStateT>(name, "sensors", "state", update_period_us)
+        : TypedBlock<SensedStateT, NavigationStateT>(name, "sensors", "state", update_period_us)
         , observer_(std::move(observer))
     {}
 
@@ -24,15 +24,15 @@ public:
         return true;
     }
 
-    void reset(const ObservedStateT& initial) {
+    void reset(const NavigationStateT& initial) {
         observer_->reset(initial);
     }
 
-    shared::IObserver<ObservedStateT>& observer() { return *observer_; }
+    shared::IObserver<NavigationStateT>& observer() { return *observer_; }
 protected:
     virtual void feed_sensors(const SensedStateT& sensors) = 0;
 
-    std::unique_ptr<shared::IObserver<ObservedStateT>> observer_;
+    std::unique_ptr<shared::IObserver<NavigationStateT>> observer_;
 };
 
 } // namespace sim
