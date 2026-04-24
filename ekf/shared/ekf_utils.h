@@ -51,33 +51,35 @@ public:
 
 using BufferReserver = BufferReserverT<double>;
 
-inline void compute_radius(double lat, double& RM, double& RN) {
-    double sin_lat = sin(lat);
-    double sin2_lat = sin_lat * sin_lat;
-    double den = 1.0 - e2 * sin2_lat;
-    
-    RM = (R0 * (1.0 - e2)) / pow(den, 1.5);
-    RN = R0 / sqrt(den);
+template<typename Scalar>
+inline void compute_radius(Scalar lat, Scalar& RM, Scalar& RN) {
+    Scalar sin_lat = std::sin(lat);
+    Scalar sin2_lat = sin_lat * sin_lat;
+    Scalar den = Scalar(1.0) - Scalar(e2) * sin2_lat;
+
+    RM = (Scalar(R0) * (Scalar(1.0) - Scalar(e2))) / std::pow(den, Scalar(1.5));
+    RN = Scalar(R0) / std::sqrt(den);
 }
 
-inline Eigen::Vector3d gravity_ned(double lat_rad, double height_m)
+template<typename Scalar>
+inline Eigen::Matrix<Scalar, 3, 1> gravity_ned(Scalar lat_rad, Scalar height_m)
 {
-    const double sin_lat = std::sin(lat_rad);
-    const double sin2_lat = sin_lat * sin_lat;
-    const double sin_2lat = std::sin(2.0 * lat_rad);
-    const double sin2_2lat = sin_2lat * sin_2lat;
+    const Scalar sin_lat = std::sin(lat_rad);
+    const Scalar sin2_lat = sin_lat * sin_lat;
+    const Scalar sin_2lat = std::sin(Scalar(2.0) * lat_rad);
+    const Scalar sin2_2lat = sin_2lat * sin_2lat;
 
     // Somigliana normal gravity (WGS-84)
-    const double g0 =
-        9.780327 * (1.0
-        + 0.0053024 * sin2_lat
-        - 0.0000058 * sin2_2lat);
+    const Scalar g0 =
+        Scalar(9.780327) * (Scalar(1.0)
+        + Scalar(0.0053024) * sin2_lat
+        - Scalar(0.0000058) * sin2_2lat);
 
     // Free-air correction
-    const double g = g0 - 3.086e-6 * height_m;
+    const Scalar g = g0 - Scalar(3.086e-6) * height_m;
 
     // NED frame: +Z is down
-    return Eigen::Vector3d(0.0, 0.0, g);
+    return Eigen::Matrix<Scalar, 3, 1>(Scalar(0), Scalar(0), g);
 }
 
 #endif

@@ -31,6 +31,7 @@ target_link_libraries(sim_lib INTERFACE Eigen3::Eigen)
 # Main executable
 add_executable(quad_sim
     src/main.cpp
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16.cpp
     ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
 )
 
