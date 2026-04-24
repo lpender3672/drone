@@ -51,6 +51,10 @@ EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NO
     const double Tp_baro = p.baro_altitude_tp;
 
     baro_noise_var_ = N_baro * N_baro;
+    gravity_noise_var_ = Eigen::Vector3d(
+        p.gravity_sigma_x * p.gravity_sigma_x,
+        p.gravity_sigma_y * p.gravity_sigma_y,
+        p.gravity_sigma_z * p.gravity_sigma_z);
 
     // --- Gauss–Markov time constants ---
     tau_g_      = Tp_gyro / 1.89;
@@ -350,18 +354,64 @@ void EKF16d::feed_imu(const sensors::ImuMeasurement& imu) {
     
     // Cache angular velocity for output() (corrected for bias)
     last_omega_ = imu.gyro - bg();
-    
+
     // Run prediction step
     predict(imu, dt);
+
+    // Gravity aiding at 50 Hz: use accelerometer to directly constrain roll/pitch.
+    // Only when the vehicle is approximately in 1-g flight (not hard maneuvering).
+    constexpr uint64_t GRAVITY_PERIOD_US = 10000;  // 100 Hz
+    const double f_norm = imu.acc.norm();
+    if (last_imu_timestamp_us_ > 0 &&
+        (last_imu_timestamp_us_ - last_gravity_update_us_) >= GRAVITY_PERIOD_US &&
+        f_norm > 7.0 && f_norm < 14.0)
+    {
+        last_gravity_update_us_ = last_imu_timestamp_us_;
+        update_gravity(imu.acc);
+    }
+}
+
+void EKF16d::update_gravity(const Eigen::Vector3d& f_body) {
+    reserver_.reset();
+
+    // At hover: f_body = -C_n_b * g * g_n, so -f_body.normalized() = C_n_b * g_n
+    // Measurement z = -f_body.normalized()  (gravity direction in body frame)
+    // Prediction  h = C_n_b * g_n           (same structure as magnetometer)
+    // Innovation = 0 at the true state (sign-consistent by construction).
+    // H derivation (same as magnetometer, replacing m_n with g_n):
+    //   h_true = C_n_b_true * g_n = C_n_b * (I - skew(dth)) * g_n
+    //          = C_n_b * g_n + C_n_b * skew(g_n) * dth
+    //   H_att = C_n_b * skew(g_n)
+    static const Eigen::Vector3d g_n(0.0, 0.0, 1.0);  // unit gravity, NED (down)
+
+    Eigen::Matrix3d C_b_n = quat_from_state(q_vec()).toRotationMatrix();
+    Eigen::Matrix3d C_n_b = C_b_n.transpose();
+
+    Eigen::Vector3d g_pred = C_n_b * g_n;
+    Eigen::Vector3d g_meas = -f_body.normalized();
+    Eigen::Vector3d innovation = g_meas - g_pred;
+
+    Eigen::Matrix<double, 3, DIM_ERROR> H;
+    H.setZero();
+    H.block<3,3>(0, ERR_ATT) = C_n_b * skew(g_n);
+
+    Eigen::Matrix3d R = gravity_noise_var_.asDiagonal();
+
+    update_internal<3>(innovation, H, R);
 }
 
 void EKF16d::feed_mag(const sensors::MagMeasurement& mag) {
     if (!mag.valid) return;
-    
-    // Default magnetometer noise covariance
-    // TODO: Make configurable or derive from measurement
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * 0.1;
-    
+
+    const double field_norm = mag.field.norm();
+    if (field_norm < 10.0) return;  // reject implausible readings (< 10 µT)
+
+    // Normalised-measurement noise: assume ~1 µT body-frame noise.
+    // var_normalised = (noise_ut / field_norm)^2 per axis.
+    constexpr double noise_ut = 1.0;
+    const double n = noise_ut / field_norm;
+    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * (n * n);
+
     update_magnetometer(mag.field.normalized(), R);
 }
 

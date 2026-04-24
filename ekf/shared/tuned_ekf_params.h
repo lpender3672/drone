@@ -30,6 +30,9 @@ inline constexpr EkfErrorParameters SENSE_HAT_DATA_PARAMS =
     .baro_altitude_n = 1.3389559051e-01,
     .baro_altitude_b = 1.4283838135e-02,
     .baro_altitude_tp = 0.019212,
+    .gravity_sigma_x = 3.2984182427e-03,
+    .gravity_sigma_y = 2.7756730298e-03,
+    .gravity_sigma_z = 2.5588124230e-02,
 };
 
 inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS = 
@@ -56,6 +59,9 @@ inline constexpr EkfErrorParameters TEENSY_PTYPE_DATA_PARAMS =
     .baro_altitude_n = 1.8783743686e-02,
     .baro_altitude_b = 8.1489591735e-03,
     .baro_altitude_tp = 0.050000,
+    .gravity_sigma_x = 4.3797115342e-03,
+    .gravity_sigma_y = 5.0863602233e-03,
+    .gravity_sigma_z = 5.6734368339e-03,
 };
 
 #endif // TUNED_EKF_PARAMS_H

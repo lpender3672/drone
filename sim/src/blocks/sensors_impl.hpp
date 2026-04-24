@@ -154,6 +154,52 @@ private:
 };
 
 /**
+ * Magnetometer sensor model.
+ * Rotates the reference NED field into body frame and adds white noise.
+ * Reference vector matches the hardcoded value in EKF16d::update_magnetometer.
+ */
+template<typename TrueStateT>
+class MagSensor : public SensorBlock<TrueStateT, MagData> {
+public:
+    struct NoiseParams {
+        double noise_stddev = 0.5;  // [µT] per axis white noise
+    };
+
+    MagSensor(const std::string& name = "mag",
+              uint32_t update_period_us = 20000,
+              uint32_t latency_us = 5000)
+        : SensorBlock<TrueStateT, MagData>(name, update_period_us, latency_us)
+    {}
+
+    void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
+
+protected:
+    MagData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        // Reference NED field (unit vector) — must match EKF's m_n
+        static const Vec3 m_n(0.40, 0.0, 0.92);
+        static const double field_magnitude = 50.0;  // µT
+
+        Vec3 m_body = true_state.R_bn() * m_n * field_magnitude;
+
+        Vec3 noise(
+            this->gaussian_noise(noise_params_.noise_stddev),
+            this->gaussian_noise(noise_params_.noise_stddev),
+            this->gaussian_noise(noise_params_.noise_stddev)
+        );
+
+        MagData reading;
+        reading.set_field(m_body + noise);
+        reading.valid = true;
+
+        (void)current_time_us;
+        return reading;
+    }
+
+private:
+    NoiseParams noise_params_;
+};
+
+/**
  * Barometer sensor model.
  * Converts true NED z-position to altitude with white noise and bias random walk.
  */

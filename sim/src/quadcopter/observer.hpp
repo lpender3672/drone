@@ -19,12 +19,14 @@ public:
         , imu_input_("imu")
         , gnss_input_("gnss")
         , baro_input_("baro")
+        , mag_input_("mag")
         , output_("state")
     {}
 
     InputPort<ImuData>&        imu_input()  { return imu_input_; }
     InputPort<GnssData>&       gnss_input() { return gnss_input_; }
     InputPort<BaroData>&       baro_input() { return baro_input_; }
+    InputPort<MagData>&        mag_input()  { return mag_input_; }
     OutputPort<ObservedState>& output()     { return output_; }
 
     // Must match the origin set on GpsSensor
@@ -65,7 +67,7 @@ public:
         P0(1,1) = 1.0 / (6378388.0 * 6378388.0);
         P0(2,2) = 1.0;
         P0.block<3,3>(3,3)   = Eigen::Matrix3d::Identity() * 1e-4;    // vel: 0.01 m/s
-        P0.block<3,3>(6,6)   = Eigen::Matrix3d::Identity() * 1e-6;    // att: 0.001 rad
+        P0.block<3,3>(6,6)   = Eigen::Matrix3d::Identity() * 1e-4;    // att: ~0.01 rad (0.6 deg)
         P0.block<3,3>(9,9)   = Eigen::Matrix3d::Identity() * 1e-6;    // accel bias
         P0.block<3,3>(12,12) = Eigen::Matrix3d::Identity() * 1e-6;    // gyro bias
         P0(15,15)            = 1e-4;                                   // baro bias
@@ -103,6 +105,15 @@ public:
             }
         }
 
+        // Feed mag only when a new reading arrives
+        if (mag_input_.connected && mag_updates_enabled_) {
+            uint64_t mag_ts = mag_input_.value.timestamp();
+            if (mag_ts != last_mag_ts_ && mag_ts > 0) {
+                ekf_.feed_mag(static_cast<const sensors::MagMeasurement&>(mag_input_.value));
+                last_mag_ts_ = mag_ts;
+            }
+        }
+
         shared::ObservedState ekf_out = ekf_.output();
         ekf_out.valid = true;
         static_cast<shared::ObservedState&>(output_.value) = ekf_out;
@@ -113,16 +124,20 @@ public:
     EKF16d& ekf() { return ekf_; }
     void set_gnss_enabled(bool v) { gnss_updates_enabled_ = v; }
     void set_baro_enabled(bool v) { baro_updates_enabled_ = v; }
+    void set_mag_enabled(bool v)  { mag_updates_enabled_  = v; }
 
     EKF16d              ekf_;
     InputPort<ImuData>  imu_input_;
     InputPort<GnssData> gnss_input_;
     InputPort<BaroData> baro_input_;
+    InputPort<MagData>  mag_input_;
     OutputPort<ObservedState> output_;
     uint64_t last_gnss_ts_        = 0;
     uint64_t last_baro_ts_        = 0;
+    uint64_t last_mag_ts_         = 0;
     bool     gnss_updates_enabled_ = true;
     bool     baro_updates_enabled_ = true;
+    bool     mag_updates_enabled_  = true;
     double   origin_lat_deg_ = 52.2053;
     double   origin_lon_deg_ =  0.1218;
     double   origin_alt_m_   = 10.0;

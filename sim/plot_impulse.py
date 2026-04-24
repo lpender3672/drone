@@ -24,6 +24,8 @@ def main():
     pitch_rate  = data["pitch_rate_dps"]
     pos_z       = data["pos_z_m"]
     dist_nm     = data["disturbance_nm"]
+    ekf_roll    = data["ekf_roll_deg"]    if "ekf_roll_deg"  in data.dtype.names else None
+    ekf_pitch   = data["ekf_pitch_deg"]   if "ekf_pitch_deg" in data.dtype.names else None
 
     impulse_t = 1.0  # known impulse time
 
@@ -37,10 +39,13 @@ def main():
         ax.axvline(impulse_t, color="gray", linestyle=":", linewidth=0.9)
 
     ax1 = fig.add_subplot(gs[0])
-    ax1.plot(t, roll_deg,  label="Roll",  color="tab:blue")
-    ax1.plot(t, pitch_deg, label="Pitch", color="tab:orange")
+    ax1.plot(t, roll_deg,  label="Roll (true)",  color="tab:blue")
+    ax1.plot(t, pitch_deg, label="Pitch (true)", color="tab:orange")
+    if ekf_roll is not None:
+        ax1.plot(t, ekf_roll,  label="Roll (EKF)",  color="tab:blue",   linestyle="--", alpha=0.7)
+        ax1.plot(t, ekf_pitch, label="Pitch (EKF)", color="tab:orange", linestyle="--", alpha=0.7)
     ax1.set_ylabel("Angle (deg)")
-    ax1.legend(loc="upper right", fontsize=8)
+    ax1.legend(loc="upper right", fontsize=8, ncol=2)
     ax1.grid(True, alpha=0.3)
     add_impulse_line(ax1)
 

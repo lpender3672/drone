@@ -10,6 +10,12 @@ import ASD_to_GaussMarkovFirstOrder as ASD2GM1
 
 G_TO_MS2 = 9.80665
 
+# Inflation over the pure per-sample-noise minimum (accel_std_per_sample / g).
+# Accounts for: (a) double-counting the accel that's also in predict,
+# (b) vehicle dynamics not present in static slab data,
+# (c) vibration not present in static slab data.
+GRAVITY_SIGMA_INFLATION = 4.0
+
 
 RecordHeader = Tuple[int, int, int, int]  # (t_ms, len, truncated, reserved)
 
@@ -378,14 +384,25 @@ def main():
             f.write(f"inline constexpr EkfErrorParameters {setup.upper()}_PARAMS = \n")
             f.write("{\n")
             f.write(f"    .sampling_freq = {imu_fs:.6f},\n")
-            
+
+            accel_Ns = {}  # axis letter -> N
             for axis_name, params in error_params.items():
                 if not isinstance(params, dict): continue
                 clean_name = axis_name.lower()
                 f.write(f"    .{clean_name}_n = {params['N']:.10e},\n")
                 f.write(f"    .{clean_name}_b = {params['B']:.10e},\n")
                 f.write(f"    .{clean_name}_tp = {params['Tp']:.6f},\n")
-            
+                if clean_name.startswith('accel_'):
+                    accel_Ns[clean_name[-1]] = params['N']
+
+            # Gravity aiding R per axis. Allan N (units: m/s²·√s) → per-sample std via ·√Fs
+            # → radians via /g → inflated for dynamics and double-counting.
+            for axis in ('x', 'y', 'z'):
+                if axis in accel_Ns:
+                    per_sample_std = accel_Ns[axis] * np.sqrt(imu_fs)
+                    gravity_sigma = per_sample_std / G_TO_MS2 * GRAVITY_SIGMA_INFLATION
+                    f.write(f"    .gravity_sigma_{axis} = {gravity_sigma:.10e},\n")
+
             # Remove trailing comma if we wrote at least one field
             f.seek(f.tell() - 2)
             f.write("\n};\n\n")
