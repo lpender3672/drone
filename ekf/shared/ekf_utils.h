@@ -7,50 +7,49 @@
 constexpr double R0 = 6378137.0;            // Equatorial Radius
 constexpr double e2 = 0.00669437999014;     // Eccentricity squared
 
-class BufferReserver {
-    double* base_;
+template<typename Scalar>
+class BufferReserverT {
+    Scalar* base_;
     int capacity_;
     int offset_ = 0;
 public:
-    BufferReserver(double* buf, int capacity) : base_(buf), capacity_(capacity) {}
-    
+    BufferReserverT(Scalar* buf, int capacity) : base_(buf), capacity_(capacity) {}
+
     template<int Rows, int Cols>
-    Eigen::Map<Eigen::Matrix<double, Rows, Cols>> matrix() {
+    Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols>> matrix() {
         static_assert(Rows > 0 && Cols > 0, "Dynamic size not supported");
         int size = Rows * Cols;
-
-        //Serial.printf("Allocating matrix %dx%d at offset %d\n with remaining %d/%d\n", Rows, Cols, offset_, remaining(), capacity_);
 
         if (offset_ + size > capacity_)
         {
             while (true); // Buffer overflow
         }
 
-        auto map = Eigen::Map<Eigen::Matrix<double, Rows, Cols>>(base_ + offset_);
+        auto map = Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols>>(base_ + offset_);
         offset_ += size;
         return map;
     }
 
     template<int Size>
-    Eigen::Map<Eigen::Matrix<double, Size, 1>> vector() {
+    Eigen::Map<Eigen::Matrix<Scalar, Size, 1>> vector() {
         static_assert(Size > 0, "Dynamic size not supported");
-
-        //Serial.printf("Allocating vector %d at offset %d\n with remaining %d/%d\n", Size, offset_, remaining(), capacity_);
 
         if (offset_ + Size > capacity_)
         {
             while (true); // Buffer overflow
         }
 
-        auto map = Eigen::Map<Eigen::Matrix<double, Size, 1>>(base_ + offset_);
+        auto map = Eigen::Map<Eigen::Matrix<Scalar, Size, 1>>(base_ + offset_);
         offset_ += Size;
         return map;
     }
-    
+
     void reset() { offset_ = 0; }
     int used() const { return offset_; }
     int remaining() const { return capacity_ - offset_; }
 };
+
+using BufferReserver = BufferReserverT<double>;
 
 inline void compute_radius(double lat, double& RM, double& RN) {
     double sin_lat = sin(lat);

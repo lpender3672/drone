@@ -2,7 +2,7 @@
 #include "tuned_ekf_params.h"
 
 
-EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>(p)
+EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<double, DIM_NOMINAL, DIM_ERROR, DIM_NOISE>(p)
 {
     P_.setIdentity();
     Qc_.setZero();

@@ -30,23 +30,21 @@ enum NomIdx {
     NOM_BBARO = 16
 };
 
-class EKF16d : public EKF<DIM_NOMINAL, DIM_ERROR, DIM_NOISE>,
+class EKF16d : public EKF<double, DIM_NOMINAL, DIM_ERROR, DIM_NOISE>,
                public shared::IObserver<shared::StateWithBiases> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     explicit EKF16d(const EkfErrorParameters& p);
 
-    // === IEKF interface (low-level updates with covariances) ===
-    
     // Prediction Step [Source: 282]
-    void predict(const ImuMeasurement& imu, double dt) override;
+    void predict(const ImuMeasurement& imu, double dt);
 
     // Measurement Updates [Source: 236]
-    void update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R) override;
-    void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R) override;
-    void update_barometer(double altitude, double R_var) override;
-    void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R) override;
+    void update_gnss_position(const Eigen::Vector3d& pos_gnss, const Eigen::Matrix3d& R);
+    void update_gnss_velocity(const Eigen::Vector3d& vel_gnss, const Eigen::Matrix3d& R);
+    void update_barometer(double altitude, double R_var);
+    void update_magnetometer(const Eigen::Vector3d& mag_body, const Eigen::Matrix3d& R);
     void update_gravity(const Eigen::Vector3d& f_body);
 
     // === IObserver interface (high-level sensor feed) ===
