@@ -175,9 +175,11 @@ public:
 
 protected:
     MagData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
-        // Reference NED field (unit vector) — must match EKF's m_n
-        static const Vec3 m_n(0.40, 0.0, 0.92);
-        static const double field_magnitude = 50.0;  // µT
+        // Reference NED field (unit vector) — matches the EKF's default for Cambridge, UK
+        // (WMM 2025: inclination ~67°, declination ~1° W). Override both ends together
+        // if you change the sim's GPS origin to another location.
+        static const Vec3 m_n(0.391, -0.007, 0.921);
+        static const double field_magnitude = 49.0;  // µT (Cambridge, WMM 2025)
 
         Vec3 m_body = true_state.R_bn() * m_n * field_magnitude;
 

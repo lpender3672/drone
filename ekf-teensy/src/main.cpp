@@ -129,10 +129,12 @@ void setup() {
     // Create EKF on heap (deferred from static init)
     ekf = new EKF16d(TEENSY_PTYPE_DATA_PARAMS);
 
-    ekf->initialize(
-        EKF16d::NominalVector::Zero(),
-        EKF16d::CovMatrix::Identity() * 0.1
-    );
+    // Reset with a default NavigationState — identity quaternion, zero vel/biases,
+    // zero position (GNSS first fix will snap it). reset() handles sensible P0
+    // per block (pos/vel/att/ba/bg/bbaro) instead of a uniform 0.1 identity,
+    // and avoids the zero-quaternion degeneracy that initialize(Zero(), ...)
+    // would introduce.
+    ekf->reset(shared::NavigationState{});
     //ekf->debugCallback = ekfDebug;
 
     // Create sensors

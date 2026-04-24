@@ -260,21 +260,17 @@ template<typename Scalar>
 void EKF16<Scalar>::update_magnetometer(const Vec3& mag_body, const Mat3& R) {
     reserver_.reset();
 
-    // NED magnetic reference (unit vector). Hardcoded: Southend-on-Sea.
-    // TODO: parameterise for the operating location.
-    static const Vec3 m_n(Scalar(0.40), Scalar(0.0), Scalar(0.92));
-
     if (debugCallback) debugCallback("Before mag update");
 
     Mat3 C_b_n = quat_from_state(q_vec()).toRotationMatrix();
     Mat3 C_n_b = C_b_n.transpose();
 
-    Vec3 mag_pred = C_n_b * m_n;
+    Vec3 mag_pred = C_n_b * mag_reference_;
     Vec3 innovation = mag_body.normalized() - mag_pred;
 
     auto H = reserver_.template matrix<3, DIM_ERROR>();
     H.setZero();
-    H.template block<3,3>(0, ERR_ATT) = C_n_b * skew(m_n);
+    H.template block<3,3>(0, ERR_ATT) = C_n_b * skew(mag_reference_);
 
     if (debugCallback) debugCallback("After mag H matrix build");
     this->template update_internal<3>(innovation, H, R);
