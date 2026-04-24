@@ -17,7 +17,7 @@
 #include "blocks/force_disturbance.hpp"
 
 // EKF params
-#include "tuned_ekf_params.h"
+#include "sim_ekf_params.h"
 
 using namespace sim;
 using namespace sim::quadcopter;

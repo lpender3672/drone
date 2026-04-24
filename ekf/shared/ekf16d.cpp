@@ -51,7 +51,10 @@ EKF16d::EKF16d(const EkfErrorParameters& p) : EKF<DIM_NOMINAL, DIM_ERROR, DIM_NO
     const double Tp_baro = p.baro_altitude_tp;
 
     baro_noise_var_ = N_baro * N_baro;
-    gravity_noise_var_ = p.gravity_sigma * p.gravity_sigma;
+    gravity_noise_var_ = Eigen::Vector3d(
+        p.gravity_sigma_x * p.gravity_sigma_x,
+        p.gravity_sigma_y * p.gravity_sigma_y,
+        p.gravity_sigma_z * p.gravity_sigma_z);
 
     // --- Gauss–Markov time constants ---
     tau_g_      = Tp_gyro / 1.89;
@@ -392,7 +395,7 @@ void EKF16d::update_gravity(const Eigen::Vector3d& f_body) {
     H.setZero();
     H.block<3,3>(0, ERR_ATT) = C_n_b * skew(g_n);
 
-    Eigen::Matrix3d R = Eigen::Matrix3d::Identity() * gravity_noise_var_;
+    Eigen::Matrix3d R = gravity_noise_var_.asDiagonal();
 
     update_internal<3>(innovation, H, R);
 }

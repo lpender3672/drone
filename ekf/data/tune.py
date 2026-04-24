@@ -10,7 +10,7 @@ import ASD_to_GaussMarkovFirstOrder as ASD2GM1
 
 G_TO_MS2 = 9.80665
 
-# Inflation over the pure Allan-derived minimum (accel_N / g).
+# Inflation over the pure per-sample-noise minimum (accel_std_per_sample / g).
 # Accounts for: (a) double-counting the accel that's also in predict,
 # (b) vehicle dynamics not present in static slab data,
 # (c) vibration not present in static slab data.
@@ -385,7 +385,7 @@ def main():
             f.write("{\n")
             f.write(f"    .sampling_freq = {imu_fs:.6f},\n")
 
-            accel_Ns = []
+            accel_Ns = {}  # axis letter -> N
             for axis_name, params in error_params.items():
                 if not isinstance(params, dict): continue
                 clean_name = axis_name.lower()
@@ -393,12 +393,15 @@ def main():
                 f.write(f"    .{clean_name}_b = {params['B']:.10e},\n")
                 f.write(f"    .{clean_name}_tp = {params['Tp']:.6f},\n")
                 if clean_name.startswith('accel_'):
-                    accel_Ns.append(params['N'])
+                    accel_Ns[clean_name[-1]] = params['N']
 
-            # Gravity aiding R: (mean accel white noise / g), inflated for dynamics + double-counting.
-            if accel_Ns:
-                gravity_sigma = (sum(accel_Ns) / len(accel_Ns)) / G_TO_MS2 * GRAVITY_SIGMA_INFLATION
-                f.write(f"    .gravity_sigma = {gravity_sigma:.10e},\n")
+            # Gravity aiding R per axis. Allan N (units: m/s²·√s) → per-sample std via ·√Fs
+            # → radians via /g → inflated for dynamics and double-counting.
+            for axis in ('x', 'y', 'z'):
+                if axis in accel_Ns:
+                    per_sample_std = accel_Ns[axis] * np.sqrt(imu_fs)
+                    gravity_sigma = per_sample_std / G_TO_MS2 * GRAVITY_SIGMA_INFLATION
+                    f.write(f"    .gravity_sigma_{axis} = {gravity_sigma:.10e},\n")
 
             # Remove trailing comma if we wrote at least one field
             f.seek(f.tell() - 2)

@@ -101,7 +101,7 @@ private:
     uint64_t last_gravity_update_us_ = 0;                    // Rate-limit gravity aiding
 
     double baro_noise_var_ = 1.0;     // Measurement noise variance [m²], set from params
-    double gravity_noise_var_ = 1e-4; // Gravity aiding R per axis, set from params
+    Eigen::Vector3d gravity_noise_var_{1e-4, 1e-4, 1e-4};  // Gravity aiding R diagonal, set from params
 
     // Helpers
     void inject_error(const ErrorVector& dx);
