@@ -8,46 +8,36 @@ namespace shared {
 
 /**
  * Abstract observer interface templated on output state type.
- * 
+ *
  * StateT must provide position, velocity, attitude, angular_velocity fields.
- * Implementations include:
- *   - EKF16d (embedded/sim) -> outputs StateWithBiases
- *   - PassthroughObserver (sim with AHRS) -> outputs StateBase
- * 
- * In sim, concrete observers also inherit from Block to get scheduling.
+ * Implementations include EKF16d (INS+GNSS+baro+mag), future AHRS-only
+ * observers, etc.
+ *
+ * In sim, concrete observers are wrapped by a Block for scheduling.
  * In embedded, observers are called directly from sensor callbacks.
  */
-template<typename ObservedStateT>
+template<typename StateT>
 class IObserver {
 public:
     virtual ~IObserver() = default;
-    
-    // Sensor input methods - implementations consume what they need
+
+    // Sensor input methods — implementations consume what they need.
     virtual void feed_imu(const sensors::ImuMeasurement& imu) = 0;
     virtual void feed_mag(const sensors::MagMeasurement& mag) { (void)mag; }
     virtual void feed_baro(const sensors::BaroMeasurement& baro) { (void)baro; }
     virtual void feed_gnss(const sensors::GnssMeasurement& gnss) { (void)gnss; }
-    
-    /**
-     * Build and return the current state estimate.
-     * 
-     * This combines internal filter state (position, velocity, attitude, biases)
-     * with cached sensor data (angular velocity from last IMU).
-     * 
-     * The output() method is const - it should not modify filter state.
-     * State mutations happen only in feed_*() and predict/update steps.
-     */
-    virtual ObservedStateT output() const = 0;
-    
-    /**
-     * Reset observer to initial state.
-     */
-    virtual void reset(const ObservedStateT& initial) = 0;
+
+    // Build and return the current state estimate. Const — must not mutate
+    // filter state; all mutations happen in feed_*().
+    virtual StateT output() const = 0;
+
+    // Reset observer to the given initial state.
+    virtual void reset(const StateT& initial) = 0;
 };
 
 // Common instantiations
-using IObserverBase = IObserver<TrueState>;
-using IObserverWithBiases = IObserver<ObservedState>;
+using ITrueStateObserver = IObserver<TrueState>;
+using INavObserver       = IObserver<NavigationState>;
 
 } // namespace shared
 

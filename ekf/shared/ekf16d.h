@@ -5,11 +5,11 @@
 #include "../../shared/observer.h"
 #include "../../shared/types/state.h"
 
-// Double-precision EKF with the IObserver<StateWithBiases> adapter for
+// Double-precision EKF with the IObserver<NavigationState> adapter for
 // sim/Teensy/RPi drivers. All predict/update math lives in the templated
 // EKF16<double> base (ekf16.cpp).
 class EKF16d : public EKF16<double>,
-               public shared::IObserver<shared::StateWithBiases> {
+               public shared::IObserver<shared::NavigationState> {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -21,8 +21,8 @@ public:
     void feed_baro(const sensors::BaroMeasurement& baro) override;
     void feed_gnss(const sensors::GnssMeasurement& gnss) override;
 
-    shared::StateWithBiases output() const override;
-    void reset(const shared::StateWithBiases& initial) override;
+    shared::NavigationState output() const override;
+    void reset(const shared::NavigationState& initial) override;
 };
 
 #endif // EKF16D_H

@@ -16,8 +16,9 @@
 #include "blocks/signal_generator.hpp"
 #include "blocks/force_disturbance.hpp"
 
-// EKF params
+// EKF params and concrete observer
 #include "sim_ekf_params.h"
+#include "ekf16d.h"
 
 using namespace sim;
 using namespace sim::quadcopter;
@@ -36,7 +37,8 @@ int main() {
     auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000));
     auto baro_sensor = sim_runner.add_block(std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000));
     auto mag_sensor  = sim_runner.add_block(std::make_unique<MagSensor<TrueState>>("mag",   20000,      0));
-    auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>("ekf", SIM_DATA_PARAMS, 1000));
+    auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>(
+        "ekf", std::make_unique<EKF16d>(SIM_DATA_PARAMS), 1000));
 
     // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
     // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick

@@ -217,9 +217,9 @@ public:
  * Observed state: base state + validity + uncertainties = 17 elements
  * [pos(3), vel(3), quat(4), omega(3), valid, pos_std, vel_std, att_std]
  */
-class ObservedStateData : public InterBlockData<17> {
+class NavigationStateData : public InterBlockData<17> {
 public:
-    ObservedStateData() {
+    NavigationStateData() {
         data_[6] = 1.0;  // qw identity
     }
 
@@ -271,7 +271,7 @@ public:
         set_attitude(q);
     }
 
-    std::string type_name() const override { return "ObservedStateData"; }
+    std::string type_name() const override { return "NavigationStateData"; }
 };
 
 /**

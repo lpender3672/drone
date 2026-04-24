@@ -51,11 +51,11 @@ public:
 
     std::string type_name() const override { return "TrueState"; }
 };
-class ObservedState : public shared::ObservedState, public InterBlockData<17> {
+class NavigationState : public shared::NavigationState, public InterBlockData<17> {
 public:
-    ObservedState() = default;
+    NavigationState() = default;
 
-    std::string type_name() const override { return "ObservedState"; }
+    std::string type_name() const override { return "NavigationState"; }
 };
 
 } // namespace quadcopter
