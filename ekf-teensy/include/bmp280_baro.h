@@ -14,7 +14,7 @@
  */
 class BMP280Baro : public sensors::Sensor<sensors::BaroReading>, public sensors::SensorTiming {
 private:
-    shared::IObserverWithBiases* observer_;
+    shared::INavObserver* observer_;
     bool ref_set_ = false;
     float p0_pa_ = 101325.0f;  // Standard atmospheric pressure
 
@@ -28,7 +28,7 @@ private:
     }
 
 public:
-    BMP280Baro(shared::IObserverWithBiases* observer, uint32_t interval_ms = 50)
+    BMP280Baro(shared::INavObserver* observer, uint32_t interval_ms = 50)
         : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
           observer_(observer) {}
 
