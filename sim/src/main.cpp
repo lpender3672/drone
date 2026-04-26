@@ -15,6 +15,7 @@
 #include "blocks/sensors_impl.hpp"
 #include "blocks/signal_generator.hpp"
 #include "blocks/force_disturbance.hpp"
+#include "blocks/altitude_hold.hpp"
 
 // EKF params and concrete observer
 #include "sim_ekf_params.h"
@@ -41,6 +42,8 @@ int main() {
 
     auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>(
         "ekf", std::make_unique<EKF16d>(SIM_DATA_PARAMS), 1000));
+    auto alt_hold    = sim_runner.add_block(
+        std::make_unique<AltitudeHoldBlock<NavigationState>>("alt_hold", 1000));
 
     auto controller  = sim_runner.add_block(std::make_unique<AttitudePidController>("controller", 1000));
 
@@ -103,18 +106,21 @@ int main() {
     connect(baro_sensor->output(), ekf_block->baro_input());
     connect(mag_sensor->output(),  ekf_block->mag_input());
 
+    connect(ekf_block->output(),   alt_hold->input());
+    connect(alt_hold->output(),    controller->thrust_input());
     connect(ekf_block->output(),   controller->state_input());
     connect(controller->output(),  dynamics->input());
 
     // =========================================
-    // Hover reference (fixed for this test)
+    // Attitude reference (roll/pitch/yaw only — thrust driven by alt_hold)
     // =========================================
     AttitudeReference ref;
     ref.set_roll(0.0);
     ref.set_pitch(0.0);
     ref.set_yaw(0.0);
-    ref.set_thrust(0.70);
     controller->reference_input().set(ref);
+
+    alt_hold->set_setpoint_m(ekf_block->origin_alt_m_ - init.position.z());
 
     // =========================================
     // CSV output

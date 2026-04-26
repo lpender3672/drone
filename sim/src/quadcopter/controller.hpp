@@ -63,6 +63,8 @@ public:
     Params& params() { return params_; }
     const Params& params() const { return params_; }
 
+    InputPort<Scalar>& thrust_input() { return thrust_input_; }
+
     void set_mixer(const Eigen::Matrix<double, 4, 4>& mixer) { mixer_ = mixer; }
 
     void reset() {
@@ -99,7 +101,10 @@ public:
         }
 
         // Mix to motor efforts
-        Vec4 control_input(reference_input_.get().thrust(), rate_output.x(), rate_output.y(), rate_output.z());
+        double thrust = thrust_input_.connected
+                      ? thrust_input_.get().value()
+                      : reference_input_.get().thrust();
+        Vec4 control_input(thrust, rate_output.x(), rate_output.y(), rate_output.z());
         output_.value.vector() = mixer_ * control_input;
         //output_.value.clamp();
         //output_.value.set_timestamp(current_time_s);
@@ -117,6 +122,7 @@ private:
     Params params_;
     Eigen::Matrix<double, 4, 4> mixer_;
     std::array<std::unique_ptr<PidBlock>, 3> rate_pids_;
+    InputPort<Scalar> thrust_input_{"thrust_override"};
 };
 
 } // namespace quadcopter
