@@ -19,7 +19,7 @@ public:
 
     bool update(uint64_t current_time_us) override {
         if (!is_due(current_time_us)) return false;
-        output_.value.set_force(direction_ * input_.value.value());
+        output_.value.set_force(direction_ * input_.get().value());
         mark_updated(current_time_us);
         return true;
     }
@@ -42,7 +42,7 @@ public:
 
     bool update(uint64_t current_time_us) override {
         if (!is_due(current_time_us)) return false;
-        output_.value.set_torque(axis_ * input_.value.value());
+        output_.value.set_torque(axis_ * input_.get().value());
         mark_updated(current_time_us);
         return true;
     }

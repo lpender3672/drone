@@ -15,6 +15,7 @@
 #include "blocks/sensors_impl.hpp"
 #include "blocks/signal_generator.hpp"
 #include "blocks/force_disturbance.hpp"
+#include "blocks/altitude_hold.hpp"
 
 // EKF params and concrete observer
 #include "sim_ekf_params.h"
@@ -26,30 +27,39 @@ using namespace sim::quadcopter;
 int main() {
     std::cout << "=== Quadrotor Closed-Loop Impulse Response ===\n\n";
 
-    Simulation sim_runner(0.001);
+    Simulation sim_runner;  // default 1 ms step
 
     // =========================================
-    // Create blocks
+    // Create blocks (in execution order)
     // =========================================
-    auto dynamics    = sim_runner.add_block(std::make_unique<QuadrotorDynamics>("dynamics", 1000, 100));
-    auto controller  = sim_runner.add_block(std::make_unique<AttitudePidController>("controller", 1000));
+    auto dist_gen    = sim_runner.add_block(std::make_unique<WaveformGenerator>("dist_gen",    WaveformParams{}, 1000));
+    auto dist_torque = sim_runner.add_block(std::make_unique<TorqueDisturbanceBlock>("dist_torque", Vec3(1, 0, 0), 1000));
+
     auto imu_sensor  = sim_runner.add_block(std::make_unique<ImuSensor<TrueState>>("imu",    1000,      0));
     auto gnss_sensor = sim_runner.add_block(std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000));
     auto baro_sensor = sim_runner.add_block(std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000));
     auto mag_sensor  = sim_runner.add_block(std::make_unique<MagSensor<TrueState>>("mag",   20000,      0));
+
     auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>(
         "ekf", std::make_unique<EKF16d>(SIM_DATA_PARAMS), 1000));
+    auto alt_hold    = sim_runner.add_block(
+        std::make_unique<AltitudeHoldBlock<NavigationState>>("alt_hold", 1000));
 
-    // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
+    auto controller  = sim_runner.add_block(std::make_unique<AttitudePidController>("controller", 1000));
+
+    auto dynamics    = sim_runner.add_block(std::make_unique<QuadrotorDynamics>("dynamics", 1000, 100));
+
+    // =========================================
+    // Configure disturbance waveform
+    // =========================================
+    // 0.1 N·m roll torque impulse for 10 ms at t = 1 s
     // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick
     WaveformParams dist_params;
     dist_params.type         = Waveform::Impulse;
-    dist_params.amplitude    = 0.1;   // N·m
-    dist_params.start_time_s = 1.0;   // s
-    dist_params.duration_s   = 0.01;  // 10 ms
-
-    auto dist_gen    = sim_runner.add_block(std::make_unique<WaveformGenerator>("dist_gen",    dist_params, 1000));
-    auto dist_torque = sim_runner.add_block(std::make_unique<TorqueDisturbanceBlock>("dist_torque", Vec3(1, 0, 0), 1000)); // roll axis
+    dist_params.amplitude    = 0.1;
+    dist_params.start_time_s = 1.0;
+    dist_params.duration_s   = 0.01;
+    dist_gen->set_params(dist_params);
 
     // =========================================
     // Configure dynamics
@@ -66,7 +76,6 @@ int main() {
     dyn_params.propeller.rho   = 1.225;
     dynamics->set_params(dyn_params);
 
-    // Initial state: 1 m above ground in NED (z negative = up)
     TrueState init;
     init.position         = Vec3(0.0, 0.0, -1.0);
     init.velocity         = Vec3::Zero();
@@ -82,13 +91,36 @@ int main() {
     ekf_block->set_mag_enabled(true);
 
     // =========================================
-    // Hover reference
+    // Wire port connections
+    // =========================================
+    connect(dist_gen->output(),    dist_torque->input());
+    connect(dist_torque->output(), dynamics->disturbance_torque_input());
+
+    connect(dynamics->output(), imu_sensor->input());
+    connect(dynamics->output(), gnss_sensor->input());
+    connect(dynamics->output(), baro_sensor->input());
+    connect(dynamics->output(), mag_sensor->input());
+
+    connect(imu_sensor->output(),  ekf_block->imu_input());
+    connect(gnss_sensor->output(), ekf_block->gnss_input());
+    connect(baro_sensor->output(), ekf_block->baro_input());
+    connect(mag_sensor->output(),  ekf_block->mag_input());
+
+    connect(ekf_block->output(),   alt_hold->input());
+    connect(alt_hold->output(),    controller->thrust_input());
+    connect(ekf_block->output(),   controller->state_input());
+    connect(controller->output(),  dynamics->input());
+
+    // =========================================
+    // Attitude reference (roll/pitch/yaw only — thrust driven by alt_hold)
     // =========================================
     AttitudeReference ref;
     ref.set_roll(0.0);
     ref.set_pitch(0.0);
     ref.set_yaw(0.0);
-    ref.set_thrust(0.70);
+    controller->reference_input().set(ref);
+
+    alt_hold->set_setpoint_m(ekf_block->origin_alt_m_ - init.position.z());
 
     // =========================================
     // CSV output
@@ -109,49 +141,15 @@ int main() {
     std::cout << "-----------------------------------------------------------\n";
 
     for (uint64_t t = 0; t < END_US; t += DT_US) {
+        sim_runner.step();
 
-        // 1. Disturbance chain
-        dist_gen->update(t);
-        dist_torque->input().set(dist_gen->output().get());
-        dist_torque->update(t);
-        dynamics->disturbance_torque_input().set(dist_torque->output().get());
-
-        // 2. Feed true state to sensors
-        const TrueState& true_state = dynamics->output().get();
-        imu_sensor->input().set(true_state);
-        gnss_sensor->input().set(true_state);
-        baro_sensor->input().set(true_state);
-        mag_sensor->input().set(true_state);
-
-        imu_sensor->update(t);
-        gnss_sensor->update(t);
-        baro_sensor->update(t);
-        mag_sensor->update(t);
-
-        // 3. EKF
-        ekf_block->imu_input().set(imu_sensor->output().get());
-        ekf_block->gnss_input().set(gnss_sensor->output().get());
-        ekf_block->baro_input().set(baro_sensor->output().get());
-        ekf_block->mag_input().set(mag_sensor->output().get());
-        ekf_block->update(t);
-
-        // 4. Controller (uses EKF estimate)
-        controller->state_input().set(ekf_block->output().get());
-        controller->reference_input().set(ref);
-        controller->update(t);
-
-        // 5. Dynamics
-        dynamics->input().set(controller->output().get());
-        dynamics->update(t);
-
-        // 6. CSV row
-        const auto& s  = dynamics->output().get();
-        Vec3 euler     = s.euler_angles();
-        Vec3 omega_dps = s.angular_velocity * (180.0 / M_PI);
-        double dist_nm = dist_gen->value();
+        const auto& s      = dynamics->output().get();
+        Vec3 euler         = s.euler_angles();
+        Vec3 omega_dps     = s.angular_velocity * (180.0 / M_PI);
+        double dist_nm     = dist_gen->value();
 
         const auto& ekf_est = ekf_block->output().get();
-        Vec3 ekf_euler = ekf_est.euler_angles();
+        Vec3 ekf_euler      = ekf_est.euler_angles();
 
         csv << (t / 1e6)
             << "," << (euler.x() * 180.0 / M_PI)
@@ -167,7 +165,6 @@ int main() {
             << "," << ekf_est.position.z()
             << "\n";
 
-        // 7. Console at 1 Hz
         if (t % 1000000 == 0) {
             std::cout << std::setw(6)  << (t / 1e6)
                       << "   roll=" << std::setw(7) << (euler.x() * 180.0 / M_PI)

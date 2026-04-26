@@ -68,7 +68,7 @@ public:
 protected:
     void step_dynamics(double dt) override {
         for (int i = 0; i < 4; ++i) {
-            motors_[i]->input().set(this->input_.value[i]);
+            motors_[i]->input().set(this->input_.get()[i]);
             motors_[i]->update(this->last_update_time_us_);
         }
 
@@ -86,7 +86,7 @@ protected:
         Vec3 drag = -params_.drag_coeff * this->output_.value.velocity;
         Vec3 gravity_vec(0.0, 0.0, params_.mass * params_.gravity);
 
-        Vec3 ext_force = disturbance_input_.connected ? disturbance_input_.value.force() : Vec3::Zero();
+        Vec3 ext_force = disturbance_input_.connected ? disturbance_input_.get().force() : Vec3::Zero();
         Vec3 accel = (thrust_ned + drag + gravity_vec + ext_force) / params_.mass;
         this->output_.value.linear_accel = accel;
         this->output_.value.velocity += accel * dt;
@@ -103,7 +103,7 @@ protected:
         double tau_yaw = torque[0] + torque[1] - torque[2] - torque[3];
 
         Vec3 ext_torque = disturbance_torque_input_.connected
-            ? disturbance_torque_input_.value.torque() : Vec3::Zero();
+            ? disturbance_torque_input_.get().torque() : Vec3::Zero();
         Vec3 body_torque = Vec3(tau_roll, tau_pitch, tau_yaw) + ext_torque;
 
         Vec3 omega = this->output_.value.angular_velocity;

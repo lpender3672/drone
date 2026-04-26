@@ -134,7 +134,7 @@ protected:
     }
 
     void run(const shared::TrueState& state, const AttitudeReference& ref) {
-        shared::NavigationState obs(state);
+        NavigationState obs(state);
         ctrl->state_input().set(obs);
         ctrl->reference_input().set(ref);
         ctrl->update(0);

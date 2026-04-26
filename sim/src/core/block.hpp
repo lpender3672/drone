@@ -3,34 +3,51 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <memory>
 #include "interblock_data.hpp"
 
 namespace sim {
 
-// Forward declaration
+// Forward declaration needed for InputPort::source pointer
+template<typename T>
+struct OutputPort;
 
 template<typename T>
 struct InputPort {
     std::string name;
     T value{};
     bool connected = false;
-    
+    const OutputPort<T>* source = nullptr;
+
     explicit InputPort(const std::string& n) : name(n) {}
-    
+
     void set(const T& v) { value = v; connected = true; }
-    const T& get() const { return value; }
+
+    // Reads through the source pointer if connected via connect(); otherwise
+    // returns the locally-set value.
+    const T& get() const {
+        return source ? source->value : value;
+    }
 };
 
 template<typename T>
 struct OutputPort {
     std::string name;
     T value{};
-    
+
     explicit OutputPort(const std::string& n) : name(n) {}
-    
+
     void set(const T& v) { value = v; }
     const T& get() const { return value; }
 };
+
+// Wire an output port directly to an input port.
+// After this call, in.get() reads through the pointer — zero-copy.
+template<typename T>
+void connect(OutputPort<T>& out, InputPort<T>& in) {
+    in.source    = &out;
+    in.connected = true;
+}
 
 class Block {
 public:
@@ -144,6 +161,33 @@ public:
 
 protected:
     OutputPort<TOut> output_;
+};
+
+// A block that owns and schedules a set of child blocks.
+// Calling update() on a CompositeBlock ticks each child that is due.
+// Children are updated in the order they were added via add_child().
+class CompositeBlock : public Block {
+public:
+    explicit CompositeBlock(const std::string& name, uint32_t update_period_us = 0)
+        : Block(name, update_period_us) {}
+
+    bool update(uint64_t t) override {
+        for (auto& child : children_)
+            if (child->is_due(t)) child->update(t);
+        mark_updated(t);
+        return true;
+    }
+
+protected:
+    template<typename T>
+    T* add_child(std::unique_ptr<T> block) {
+        T* ptr = block.get();
+        children_.push_back(std::move(block));
+        return ptr;
+    }
+
+private:
+    std::vector<std::unique_ptr<Block>> children_;
 };
 
 } // namespace sim
