@@ -17,6 +17,7 @@ include(GoogleTest)
 # Test executable
 add_executable(sim_tests
     test_quadrotor_dynamics.cpp
+    test_block_core.cpp
 )
 
 target_link_libraries(sim_tests

@@ -54,6 +54,7 @@ public:
 class NavigationState : public shared::NavigationState, public InterBlockData<17> {
 public:
     NavigationState() = default;
+    explicit NavigationState(const shared::TrueState& base) : shared::NavigationState(base) {}
 
     std::string type_name() const override { return "NavigationState"; }
 };

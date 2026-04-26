@@ -16,7 +16,7 @@ namespace quadcopter {
  * Inner loop: PID rate -> control output
  * Mixer: [thrust, roll, pitch, yaw] -> motor efforts
  */
-class AttitudePidController : public ControllerBlock<shared::NavigationState, AttitudeReference, MotorEfforts> {
+class AttitudePidController : public ControllerBlock<NavigationState, AttitudeReference, MotorEfforts> {
 public:
     struct Params {
         // Attitude (outer) loop - P only
@@ -41,7 +41,7 @@ public:
     }
 
     AttitudePidController(const std::string& name, uint32_t update_period_us = 1000.0)
-        : ControllerBlock<shared::NavigationState, AttitudeReference, MotorEfforts>(
+        : ControllerBlock<NavigationState, AttitudeReference, MotorEfforts>(
             name, "", "", "", update_period_us)
         , mixer_(default_mixer())
     {
@@ -75,11 +75,11 @@ public:
         if (!is_due(current_time_us)) return false;
         mark_updated(current_time_us);
 
-        const auto& in = state_input_.value;
+        const auto& in = state_input_.get();
         Vec3 euler = in.euler_angles();
 
         // Attitude P loop -> rate setpoints
-        Vec3 attitude_error = reference_input_.value.attitude() - euler;
+        Vec3 attitude_error = reference_input_.get().attitude() - euler;
         attitude_error.z() = wrap_angle(attitude_error.z());
 
         Vec3 rate_setpoint = params_.kp_attitude.cwiseProduct(attitude_error);
@@ -99,7 +99,7 @@ public:
         }
 
         // Mix to motor efforts
-        Vec4 control_input(reference_input_.value.thrust(), rate_output.x(), rate_output.y(), rate_output.z());
+        Vec4 control_input(reference_input_.get().thrust(), rate_output.x(), rate_output.y(), rate_output.z());
         output_.value.vector() = mixer_ * control_input;
         //output_.value.clamp();
         //output_.value.set_timestamp(current_time_s);

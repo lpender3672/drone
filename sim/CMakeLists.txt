@@ -16,6 +16,12 @@ endif()
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+# MinGW on Windows: debug builds with heavy template instantiation exceed the
+# default COFF section limit. -Wa,-mbig-obj raises it to 2^31 sections.
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    add_compile_options(-Wa,-mbig-obj)
+endif()
+
 # Header-only library (interface library for header-only code)
 add_library(sim_lib INTERFACE)
 
