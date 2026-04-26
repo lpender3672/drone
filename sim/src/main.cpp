@@ -15,6 +15,7 @@
 #include "blocks/sensors_impl.hpp"
 #include "blocks/signal_generator.hpp"
 #include "blocks/force_disturbance.hpp"
+#include "blocks/altitude_hold.hpp"
 
 // EKF params and concrete observer
 #include "sim_ekf_params.h"
@@ -39,6 +40,7 @@ int main() {
     auto mag_sensor  = sim_runner.add_block(std::make_unique<MagSensor<TrueState>>("mag",   20000,      0));
     auto ekf_block   = sim_runner.add_block(std::make_unique<QuadrotorEkfBlock>(
         "ekf", std::make_unique<EKF16d>(SIM_DATA_PARAMS), 1000));
+    auto alt_hold    = sim_runner.add_block(std::make_unique<AltitudeHoldBlock>("alt_hold", 1000));
 
     // Disturbance: 0.1 N·m roll torque impulse for 10 ms at t = 1 s
     // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick
@@ -88,7 +90,10 @@ int main() {
     ref.set_roll(0.0);
     ref.set_pitch(0.0);
     ref.set_yaw(0.0);
-    ref.set_thrust(0.70);
+    // thrust channel is driven by alt_hold each step; set before the attitude update.
+
+    // Altitude-hold outer loop setpoint (geodetic metres).
+    alt_hold->set_setpoint_m(ekf_block->origin_alt_m_ - init.position.z());
 
     // =========================================
     // CSV output
@@ -135,8 +140,14 @@ int main() {
         ekf_block->mag_input().set(mag_sensor->output().get());
         ekf_block->update(t);
 
-        // 4. Controller (uses EKF estimate)
-        controller->state_input().set(ekf_block->output().get());
+        // 4a. Altitude hold — outer loop, drives thrust channel.
+        const auto& ekf_state = ekf_block->output().get();
+        alt_hold->input().set(ekf_state);
+        alt_hold->update(t);
+        ref.set_thrust(alt_hold->output().get().value());
+
+        // 4b. Attitude controller (uses EKF estimate)
+        controller->state_input().set(ekf_state);
         controller->reference_input().set(ref);
         controller->update(t);
 
