@@ -4,33 +4,28 @@
 
 #include "../core/block.hpp"
 #include "../blocks/sensors_impl.hpp"
-#include "../blocks/altitude_hold.hpp"
 #include "../data/gnss_origin.hpp"
 #include "dynamics.hpp"
 #include "controller.hpp"
 #include "observer.hpp"
 #include "state.hpp"
+#include "../../../shared/blocks/quadrotor_vehicle.hpp"
 #include "../../../shared/observer.h"
 
 namespace sim {
 namespace quadcopter {
 
 /**
- * Quadrotor vehicle as a CompositeBlock.
+ * Sim-side wrapper around a shared `QuadrotorVehicle`. The vehicle owns
+ * the EKF + altitude-hold + attitude controller; the system additionally
+ * owns sensors and dynamics for closed-loop simulation. Embedded targets
+ * use the bare `shared::QuadrotorVehicle` directly — no system wrapper.
  *
- * Owns all vehicle-internal blocks (sensors, EKF, altitude hold, attitude
- * controller, dynamics) and wires them in the constructor. The sim harness
- * only needs to:
- *   1. Inject sensors and a nav observer at construction.
- *   2. Call set_params() on dynamics.
- *   3. Call initialize() with the initial TrueState.
- *   4. Optionally set EKF sensor enables and controller reference.
+ * This is the precursor to the planned `QuadrotorPlant` rename — same
+ * shape, just a more accurate name.
  *
- * Disturbance inputs are forwarded so test harnesses can inject forces/torques
- * without knowing the internal structure.
- *
- * Template parameters default to the standard simulation sensor types so that
- * `QuadrotorSystem` (the alias below) needs no template arguments in main.cpp.
+ * Disturbance inputs are forwarded so test harnesses can inject forces
+ * and torques without knowing the internal structure.
  */
 template<
     typename ImuT  = ImuSensor<TrueState>,
@@ -40,6 +35,15 @@ template<
 >
 class QuadrotorSystemT : public CompositeBlock {
 public:
+    // The vehicle template is parameterised on sim's data wrappers so its
+    // EKF input ports accept `sim::ImuData` etc. (which add InterBlockData<>
+    // for sim's logger).
+    using Vehicle = shared::QuadrotorVehicleT<
+        QuadrotorEkfBlock,
+        shared::AltitudeHoldBlock<NavigationState>,
+        AttitudePidController
+    >;
+
     QuadrotorSystemT(
         const std::string&                    name,
         std::unique_ptr<ImuT>                 imu,
@@ -57,26 +61,27 @@ public:
         : CompositeBlock(name)
         , origin_(origin)
     {
-        // Add children in execution order so each sees the freshest upstream data.
-        imu_        = add_child(std::move(imu));
-        gnss_       = add_child(std::move(gnss));
-        baro_       = add_child(std::move(baro));
-        mag_        = add_child(std::move(mag));
-        ekf_        = add_child(std::make_unique<QuadrotorEkfBlock>(
-                          name + "_ekf", std::move(observer), sensor_period_us));
-        alt_hold_   = add_child(std::make_unique<AltitudeHoldBlock<NavigationState>>(
-                          name + "_alt_hold", control_period_us));
-        controller_ = add_child(std::make_unique<AttitudePidController>(
-                          name + "_controller", controller_params, control_period_us));
-        dynamics_   = add_child(std::make_unique<QuadrotorDynamics>(
-                          name + "_dynamics", dynamics_params, dynamics_period_us));
+        // Children added in execution order. Vehicle internally schedules
+        // its own children (EKF, alt-hold, controller) when its update()
+        // ticks; outside of that, each entry here is one tick.
+        imu_      = add_child(std::move(imu));
+        gnss_     = add_child(std::move(gnss));
+        baro_     = add_child(std::move(baro));
+        mag_      = add_child(std::move(mag));
+        vehicle_  = add_child(std::make_unique<Vehicle>(
+                       name + "_vehicle",
+                       std::move(observer),
+                       controller_params,
+                       origin_,
+                       sensor_period_us,
+                       control_period_us));
+        dynamics_ = add_child(std::make_unique<QuadrotorDynamics>(
+                       name + "_dynamics", dynamics_params, dynamics_period_us));
 
-        // The system owns the GNSS origin and pushes it to every block whose
-        // local-NED ↔ geodetic conversion depends on it. Keeping it system-
-        // scoped (rather than per-block defaults) is what lets sensors and
-        // EKF stay consistent.
+        // GNSS origin is system-scoped — the vehicle pushes it into its EKF
+        // via its own ctor; the system additionally syncs the GPS sensor
+        // and the baro ground reference so they all agree.
         gnss_->set_origin(origin_);
-        ekf_->set_origin(origin_);
         baro_->set_ground_alt_m(origin_.alt_m);
 
         // Sensors read from dynamics (previous-step output — correct one-step delay).
@@ -85,63 +90,53 @@ public:
         connect(dynamics_->output(), baro_->input());
         connect(dynamics_->output(), mag_->input());
 
-        // Sensor outputs feed the EKF.
-        connect(imu_->output(),  ekf_->imu_input());
-        connect(gnss_->output(), ekf_->gnss_input());
-        connect(baro_->output(), ekf_->baro_input());
-        connect(mag_->output(),  ekf_->mag_input());
+        // Sensor outputs feed the vehicle's EKF inputs.
+        connect(imu_->output(),  vehicle_->imu_input());
+        connect(gnss_->output(), vehicle_->gnss_input());
+        connect(baro_->output(), vehicle_->baro_input());
+        connect(mag_->output(),  vehicle_->mag_input());
 
-        // EKF estimate drives altitude hold and attitude controller.
-        connect(ekf_->output(),      alt_hold_->input());
-        connect(ekf_->output(),      controller_->state_input());
-        connect(alt_hold_->output(), controller_->thrust_input());
-
-        // Controller efforts drive dynamics.
-        connect(controller_->output(), dynamics_->input());
+        // Vehicle's motor commands drive the dynamics.
+        connect(vehicle_->motor_output(), dynamics_->input());
     }
 
     /**
-     * Call after set_params() on dynamics, before running the simulation.
-     * Resets dynamics to init, initialises the EKF from the same state,
-     * syncs the baro ground-altitude reference, and seeds the alt-hold setpoint.
+     * Reset dynamics to the init state and ask the vehicle to seed its
+     * estimator and alt-hold setpoint from the same.
      */
     void initialize(const TrueState& init) {
         dynamics_->reset(init);
-        ekf_->initialize(init);
-        alt_hold_->set_setpoint_m(origin_.alt_m - init.position.z());
+        vehicle_->initialize(init);
     }
 
     const GnssOrigin& origin() const { return origin_; }
 
-    // ----------------------------------------------------------------
-    // Component accessors — use these for per-block configuration and
-    // logging in the sim harness.
-    // ----------------------------------------------------------------
-    ImuT&                               imu()        { return *imu_; }
-    GnssT&                              gnss()       { return *gnss_; }
-    BaroT&                              baro()       { return *baro_; }
-    MagT&                               mag()        { return *mag_; }
-    QuadrotorEkfBlock&                  ekf()        { return *ekf_; }
-    AltitudeHoldBlock<NavigationState>& alt_hold()   { return *alt_hold_; }
-    AttitudePidController&              controller() { return *controller_; }
+    // Sensor accessors.
+    ImuT&  imu()  { return *imu_; }
+    GnssT& gnss() { return *gnss_; }
+    BaroT& baro() { return *baro_; }
+    MagT&  mag()  { return *mag_; }
+
+    // Vehicle / vehicle-internal accessors. The forwarders preserve the
+    // existing call-site shape (`system->ekf()`, `system->controller()`).
+    Vehicle&                            vehicle()    { return *vehicle_; }
+    QuadrotorEkfBlock&                  ekf()        { return vehicle_->ekf(); }
+    shared::AltitudeHoldBlock<NavigationState>& alt_hold() { return vehicle_->alt_hold(); }
+    AttitudePidController&              controller() { return vehicle_->controller(); }
     QuadrotorDynamics&                  dynamics()   { return *dynamics_; }
 
-    // ----------------------------------------------------------------
     // Forwarded disturbance ports for test harnesses.
-    // ----------------------------------------------------------------
     InputPort<NedForce>&   disturbance_force_input()  { return dynamics_->disturbance_input(); }
     InputPort<BodyTorque>& disturbance_torque_input() { return dynamics_->disturbance_torque_input(); }
 
 private:
-    GnssOrigin                           origin_;
-    ImuT*                                imu_        = nullptr;
-    GnssT*                               gnss_       = nullptr;
-    BaroT*                               baro_       = nullptr;
-    MagT*                                mag_        = nullptr;
-    QuadrotorEkfBlock*                   ekf_        = nullptr;
-    AltitudeHoldBlock<NavigationState>*  alt_hold_   = nullptr;
-    AttitudePidController*               controller_ = nullptr;
-    QuadrotorDynamics*                   dynamics_   = nullptr;
+    GnssOrigin           origin_;
+    ImuT*                imu_      = nullptr;
+    GnssT*               gnss_     = nullptr;
+    BaroT*               baro_     = nullptr;
+    MagT*                mag_      = nullptr;
+    Vehicle*             vehicle_  = nullptr;
+    QuadrotorDynamics*   dynamics_ = nullptr;
 };
 
 // Convenience alias for the standard simulation-sensor configuration.
