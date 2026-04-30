@@ -74,9 +74,15 @@ public:
         if (!is_due(current_time_us)) return false;
         mark_updated(current_time_us);
 
+        // Gate IMU feeds by the reading's timestamp so the same sample
+        // doesn't get integrated twice if the EKF ticks faster than the
+        // IMU (e.g. embedded EKF at 100 Hz with IMU at 100 Hz can drift
+        // to 99 Hz in either direction; sim sensors run at EKF rate so
+        // this is a no-op there).
         const auto& imu = static_cast<const sensors::ImuMeasurement&>(imu_input_.get());
-        if (imu.acc.squaredNorm() > 1.0) {
+        if (imu.timestamp_us != last_imu_ts_ && imu.acc.squaredNorm() > 1.0) {
             observer_->feed_imu(imu);
+            last_imu_ts_ = imu.timestamp_us;
         }
 
         // Feed GNSS / baro / mag only when the reading's timestamp advances.
@@ -123,6 +129,7 @@ private:
     InputPort<TBaro>    baro_input_;
     InputPort<TMag>     mag_input_;
     OutputPort<TNavOut> output_;
+    uint64_t last_imu_ts_          = 0;
     uint64_t last_gnss_ts_         = 0;
     uint64_t last_baro_ts_         = 0;
     uint64_t last_mag_ts_          = 0;
