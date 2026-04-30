@@ -19,7 +19,7 @@ class Motor : public TypedBlock<Scalar, MotorOutput> {
 public:
     explicit Motor(const std::string& name,
                    const PropellerParams& prop,
-                   uint32_t update_period_us = 0.0)
+                   uint32_t update_period_us = 0u)
         : TypedBlock(name, "throttle", "output", update_period_us)
         , prop_(prop) {}
 
@@ -50,7 +50,7 @@ public:
     explicit LinearFirstOrderMotor(const std::string& name,
                                    const Params& params,
                                    const PropellerParams& prop,
-                                   uint32_t update_period_us = 0.0)
+                                   uint32_t update_period_us = 0u)
         : Motor(name, prop, update_period_us)
         , params_(params) {}
 
@@ -89,7 +89,7 @@ public:
     explicit NonlinearFirstOrderMotor(const std::string& name,
                                       const Params& params,
                                       const PropellerParams& prop,
-                                      uint32_t update_period_us = 0.0)
+                                      uint32_t update_period_us = 0u)
         : Motor(name, prop, update_period_us)
         , params_(params) {}
 

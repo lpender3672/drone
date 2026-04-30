@@ -23,14 +23,19 @@ public:
     };
 
     QuadrotorDynamics(const std::string& name,
-                      uint32_t update_period_us = 1000.0,
-                      uint32_t internal_period_us = 10000.0)
+                      const Params& params,
+                      uint32_t update_period_us = 1000u,
+                      uint32_t internal_period_us = 10000u)
         : DynamicsBlock<MotorEfforts, TrueState>(name, update_period_us, internal_period_us)
-        , internal_period_us_(internal_period_us) {}
-
-    void set_params(const Params& params) {
-        params_ = params;
-        
+        , params_(params)
+        , internal_period_us_(internal_period_us)
+        , motor_throttles_{{
+              OutputPort<Scalar>(name + "_throttle_0"),
+              OutputPort<Scalar>(name + "_throttle_1"),
+              OutputPort<Scalar>(name + "_throttle_2"),
+              OutputPort<Scalar>(name + "_throttle_3"),
+          }}
+    {
         for (int i = 0; i < 4; ++i) {
             motors_[i] = std::make_unique<LinearFirstOrderMotor>(
                 name_ + "_motor" + std::to_string(i),
@@ -38,10 +43,14 @@ public:
                 params_.propeller,
                 internal_period_us_
             );
+            // Wire the parent's per-motor throttle output to the child's
+            // input once. step_dynamics() then writes the per-axis throttle
+            // and the motor reads through the connection.
+            connect(motor_throttles_[i], motors_[i]->input());
         }
     }
-    
-    Params& params() { return params_; }
+
+    const Params& params() const { return params_; }
 
     void reset(const TrueState& initial_state) override {
         DynamicsBlock::reset(initial_state);
@@ -54,11 +63,9 @@ public:
         double hover_torque = params_.propeller.k_q * params_.propeller.rho *
             hover_omega * hover_omega * std::pow(params_.propeller.d, 5);
         for (int i = 0; i < 4; ++i) {
-            if (motors_[i]) {
-                motors_[i]->output().value.set_omega(hover_omega);
-                motors_[i]->output().value.set_thrust(hover_thrust);
-                motors_[i]->output().value.set_torque(hover_torque);
-            }
+            motors_[i]->output().value.set_omega(hover_omega);
+            motors_[i]->output().value.set_thrust(hover_thrust);
+            motors_[i]->output().value.set_torque(hover_torque);
         }
     }
 
@@ -67,8 +74,10 @@ public:
 
 protected:
     void step_dynamics(double dt) override {
+        // Throttles don't change within an outer tick — write once, then
+        // sub-step the motors. They read back through the connect() wiring.
         for (int i = 0; i < 4; ++i) {
-            motors_[i]->input().set(this->input_.get()[i]);
+            motor_throttles_[i].set(Scalar(this->input_.get()[i]));
             motors_[i]->update(this->last_update_time_us_);
         }
 
@@ -127,6 +136,7 @@ private:
     Params params_;
     uint32_t internal_period_us_;
     std::array<std::unique_ptr<Motor>, 4> motors_;
+    std::array<OutputPort<Scalar>, 4>     motor_throttles_;
     InputPort<NedForce>   disturbance_input_{"disturbance"};
     InputPort<BodyTorque> disturbance_torque_input_{"disturbance_torque"};
 };

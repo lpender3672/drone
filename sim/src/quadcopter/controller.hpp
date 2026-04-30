@@ -40,27 +40,32 @@ public:
         return M;
     }
 
-    AttitudePidController(const std::string& name, uint32_t update_period_us = 1000.0)
+    AttitudePidController(const std::string& name,
+                          const Params& params,
+                          uint32_t update_period_us = 1000u)
         : ControllerBlock<NavigationState, AttitudeReference, MotorEfforts>(
             name, "", "", "", update_period_us)
+        , params_(params)
         , mixer_(default_mixer())
+        , rate_setpoints_{{
+              OutputPort<PidInput>(name + "_rate_in_0"),
+              OutputPort<PidInput>(name + "_rate_in_1"),
+              OutputPort<PidInput>(name + "_rate_in_2"),
+          }}
     {
         for (int i = 0; i < 3; ++i) {
             rate_pids_[i] = std::make_unique<PidBlock>(
                 name + "_rate_pid_" + std::to_string(i),
                 update_period_us
             );
-        }
-    }
-
-    void set_params(const Params& params) {
-        params_ = params;
-        for (int i = 0; i < 3; ++i) {
             rate_pids_[i]->set_params(params_.rate_pid[i]);
+            // Wire each sub-PID's input once, at construction. Update() then
+            // writes the per-axis setpoint+measurement into our output port
+            // and the PID reads through the connection — no per-tick set().
+            connect(rate_setpoints_[i], rate_pids_[i]->input());
         }
     }
 
-    Params& params() { return params_; }
     const Params& params() const { return params_; }
 
     InputPort<Scalar>& thrust_input() { return thrust_input_; }
@@ -88,14 +93,15 @@ public:
         rate_setpoint = rate_setpoint.cwiseMax(-params_.max_rate_setpoint)
                                     .cwiseMin(params_.max_rate_setpoint);
 
-        // Rate PID loops
+        // Rate PID loops — write into the connected setpoint ports, then
+        // tick each PID; it reads back through the connect() wiring.
         Vec3 rate_output;
         for (int i = 0; i < 3; ++i) {
             PidInput pid_in;
             pid_in.set_setpoint(rate_setpoint[i]);
             pid_in.set_measurement(in.angular_velocity[i]);
 
-            rate_pids_[i]->input().set(pid_in);
+            rate_setpoints_[i].set(pid_in);
             rate_pids_[i]->update(current_time_us);
             rate_output[i] = rate_pids_[i]->output().get().value();
         }
@@ -106,8 +112,6 @@ public:
                       : reference_input_.get().thrust();
         Vec4 control_input(thrust, rate_output.x(), rate_output.y(), rate_output.z());
         output_.value.vector() = mixer_ * control_input;
-        //output_.value.clamp();
-        //output_.value.set_timestamp(current_time_s);
 
         return true;
     }
@@ -122,6 +126,7 @@ private:
     Params params_;
     Eigen::Matrix<double, 4, 4> mixer_;
     std::array<std::unique_ptr<PidBlock>, 3> rate_pids_;
+    std::array<OutputPort<PidInput>, 3>      rate_setpoints_;
     InputPort<Scalar> thrust_input_{"thrust_override"};
 };
 

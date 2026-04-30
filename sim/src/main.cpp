@@ -42,21 +42,6 @@ int main() {
     dist_gen->set_params(dist_params);
 
     // =========================================
-    // Vehicle system (sensors + EKF + control + dynamics)
-    // =========================================
-    auto system = sim_runner.add_block(std::make_unique<QuadrotorSystem>(
-        "quad",
-        std::make_unique<ImuSensor<TrueState>>("imu",   1000,      0),
-        std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000),
-        std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000),
-        std::make_unique<MagSensor<TrueState>>("mag",   20000,      0),
-        std::make_unique<EKF16d>(SIM_DATA_PARAMS)
-    ));
-
-    connect(dist_gen->output(),    dist_torque->input());
-    connect(dist_torque->output(), system->disturbance_torque_input());
-
-    // =========================================
     // Configure dynamics
     // =========================================
     QuadrotorDynamics::Params dyn_params;
@@ -69,7 +54,22 @@ int main() {
     dyn_params.propeller.k_q   = 4.25e-9;
     dyn_params.propeller.d     = 1.0;
     dyn_params.propeller.rho   = 1.225;
-    system->dynamics().set_params(dyn_params);
+
+    // =========================================
+    // Vehicle system (sensors + EKF + control + dynamics)
+    // =========================================
+    auto system = sim_runner.add_block(std::make_unique<QuadrotorSystem>(
+        "quad",
+        std::make_unique<ImuSensor<TrueState>>("imu",   1000,      0),
+        std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000),
+        std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000),
+        std::make_unique<MagSensor<TrueState>>("mag",   20000,      0),
+        std::make_unique<EKF16d>(SIM_DATA_PARAMS),
+        dyn_params
+    ));
+
+    connect(dist_gen->output(),    dist_torque->input());
+    connect(dist_torque->output(), system->disturbance_torque_input());
 
     // =========================================
     // Initialize (resets dynamics, EKF, baro ref, alt-hold setpoint)

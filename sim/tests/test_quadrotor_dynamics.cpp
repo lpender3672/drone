@@ -59,8 +59,7 @@ static void step_dynamics(QuadrotorDynamics* dyn, const MotorEfforts& efforts,
 class DynamicsTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        dyn = std::make_unique<QuadrotorDynamics>("dyn", 1000, 100);
-        dyn->set_params(make_test_params());
+        dyn = std::make_unique<QuadrotorDynamics>("dyn", make_test_params(), 1000, 100);
         dyn->reset(make_initial_state(-5.0));
         t_us = 0;
     }
@@ -130,7 +129,7 @@ TEST_F(DynamicsTest, GroundCollision) {
 class ControllerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        ctrl = std::make_unique<AttitudePidController>("ctrl", 1000);
+        ctrl = std::make_unique<AttitudePidController>("ctrl", AttitudePidController::Params{}, 1000);
     }
 
     void run(const shared::TrueState& state, const AttitudeReference& ref) {

@@ -5,6 +5,7 @@
 #include "../core/block.hpp"
 #include "../blocks/sensors_impl.hpp"
 #include "../blocks/altitude_hold.hpp"
+#include "../data/gnss_origin.hpp"
 #include "dynamics.hpp"
 #include "controller.hpp"
 #include "observer.hpp"
@@ -46,11 +47,15 @@ public:
         std::unique_ptr<BaroT>                baro,
         std::unique_ptr<MagT>                 mag,
         std::unique_ptr<shared::INavObserver> observer,
+        const QuadrotorDynamics::Params&      dynamics_params,
+        const AttitudePidController::Params&  controller_params  = {},
+        const GnssOrigin&                     origin             = {},
         uint32_t sensor_period_us   = 1000,
         uint32_t control_period_us  = 1000,
         uint32_t dynamics_period_us = 1000
     )
         : CompositeBlock(name)
+        , origin_(origin)
     {
         // Add children in execution order so each sees the freshest upstream data.
         imu_        = add_child(std::move(imu));
@@ -62,9 +67,17 @@ public:
         alt_hold_   = add_child(std::make_unique<AltitudeHoldBlock<NavigationState>>(
                           name + "_alt_hold", control_period_us));
         controller_ = add_child(std::make_unique<AttitudePidController>(
-                          name + "_controller", control_period_us));
+                          name + "_controller", controller_params, control_period_us));
         dynamics_   = add_child(std::make_unique<QuadrotorDynamics>(
-                          name + "_dynamics", dynamics_period_us));
+                          name + "_dynamics", dynamics_params, dynamics_period_us));
+
+        // The system owns the GNSS origin and pushes it to every block whose
+        // local-NED ↔ geodetic conversion depends on it. Keeping it system-
+        // scoped (rather than per-block defaults) is what lets sensors and
+        // EKF stay consistent.
+        gnss_->set_origin(origin_);
+        ekf_->set_origin(origin_);
+        baro_->set_ground_alt_m(origin_.alt_m);
 
         // Sensors read from dynamics (previous-step output — correct one-step delay).
         connect(dynamics_->output(), imu_->input());
@@ -95,9 +108,10 @@ public:
     void initialize(const TrueState& init) {
         dynamics_->reset(init);
         ekf_->initialize(init);
-        baro_->set_ground_alt_m(ekf_->origin_alt_m_);
-        alt_hold_->set_setpoint_m(ekf_->origin_alt_m_ - init.position.z());
+        alt_hold_->set_setpoint_m(origin_.alt_m - init.position.z());
     }
+
+    const GnssOrigin& origin() const { return origin_; }
 
     // ----------------------------------------------------------------
     // Component accessors — use these for per-block configuration and
@@ -119,6 +133,7 @@ public:
     InputPort<BodyTorque>& disturbance_torque_input() { return dynamics_->disturbance_torque_input(); }
 
 private:
+    GnssOrigin                           origin_;
     ImuT*                                imu_        = nullptr;
     GnssT*                               gnss_       = nullptr;
     BaroT*                               baro_       = nullptr;
