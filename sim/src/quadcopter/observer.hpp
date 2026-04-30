@@ -75,7 +75,7 @@ public:
         if (gnss_input_.connected && gnss_updates_enabled_) {
             uint64_t gnss_ts = gnss_input_.get().timestamp();
             if (gnss_ts != last_gnss_ts_ && gnss_ts > 0) {
-                observer_->feed_gnss(static_cast<const sensors::GnssMeasurement&>(gnss_input_.value));
+                observer_->feed_gnss(static_cast<const sensors::GnssMeasurement&>(gnss_input_.get()));
                 last_gnss_ts_ = gnss_ts;
             }
         }
@@ -83,7 +83,7 @@ public:
         if (baro_input_.connected && baro_updates_enabled_) {
             uint64_t baro_ts = baro_input_.get().timestamp();
             if (baro_ts != last_baro_ts_ && baro_ts > 0) {
-                observer_->feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.value));
+                observer_->feed_baro(static_cast<const sensors::BaroMeasurement&>(baro_input_.get()));
                 last_baro_ts_ = baro_ts;
             }
         }
@@ -91,7 +91,7 @@ public:
         if (mag_input_.connected && mag_updates_enabled_) {
             uint64_t mag_ts = mag_input_.get().timestamp();
             if (mag_ts != last_mag_ts_ && mag_ts > 0) {
-                observer_->feed_mag(static_cast<const sensors::MagMeasurement&>(mag_input_.value));
+                observer_->feed_mag(static_cast<const sensors::MagMeasurement&>(mag_input_.get()));
                 last_mag_ts_ = mag_ts;
             }
         }

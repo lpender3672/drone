@@ -60,7 +60,7 @@ public:
         uint64_t dt_us = get_dt_us(current_time_us);
         mark_updated(current_time_us);
 
-        double throttle = std::clamp(input_.value.value(), 0.0, 1.0);
+        double throttle = std::clamp(input_.get().value(), 0.0, 1.0);
         double target_omega = throttle * params_.omega_max;
 
         double dt_s = static_cast<double>(dt_us) / 1e6;
@@ -100,7 +100,7 @@ public:
         double dt_s = dt_us / 1e6;
         mark_updated(current_time_us);
 
-        double throttle = std::clamp(input_.value.value(), 0.0, 1.0);
+        double throttle = std::clamp(input_.get().value(), 0.0, 1.0);
         double v = throttle * params_.v_supply;
 
         double omega = output_.value.omega();

@@ -15,19 +15,27 @@ struct OutputPort;
 template<typename T>
 struct InputPort {
     std::string name;
-    T value{};
     bool connected = false;
     const OutputPort<T>* source = nullptr;
 
     explicit InputPort(const std::string& n) : name(n) {}
 
-    void set(const T& v) { value = v; connected = true; }
+    // Push a value into a port that has no upstream block (e.g. an external
+    // reference input, or a parent composite forwarding into a child).
+    // Mutually exclusive with connect(): once a source pointer is wired,
+    // set() is a no-op write that get() will ignore.
+    void set(const T& v) { value_ = v; connected = true; }
 
-    // Reads through the source pointer if connected via connect(); otherwise
-    // returns the locally-set value.
+    // Reads through the source pointer if wired via connect(); otherwise
+    // returns the value last written by set(). Always use get() — never
+    // read the underlying storage directly, or you'll see stale data once
+    // the port gets wired.
     const T& get() const {
-        return source ? source->value : value;
+        return source ? source->value : value_;
     }
+
+private:
+    T value_{};
 };
 
 template<typename T>

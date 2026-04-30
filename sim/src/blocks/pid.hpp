@@ -41,7 +41,7 @@ public:
 
         mark_updated(current_time_us);
 
-        const auto& in = input_.value;
+        const auto& in = input_.get();
         double error = in.setpoint() - in.measurement();
 
         double p = params_.kp * error;
