@@ -5,27 +5,25 @@
 #include <sensor_readings.h>
 #include <sensor_constants.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
-#include <observer.h>
 
 #include "teensy_sensor_logger.h"
 
 /**
  * u-blox GNSS sensor implementation for Teensy.
- * Provides position and velocity measurements from u-blox GPS modules.
+ * Provides position and velocity measurements. Decoupled from the EKF —
+ * caller forwards readings to the observer.
  */
 class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::SensorTiming {
 private:
     SFE_UBLOX_GNSS gnss_;
-    shared::INavObserver* observer_;
 
     // Noise parameters
     double pos_std_ = 2.0;  // meters
     double vel_std_ = 0.1;  // m/s
 
 public:
-    UbloxGnss(shared::INavObserver* observer, uint32_t interval_ms = 100)
-        : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000),
-          observer_(observer) {}
+    explicit UbloxGnss(uint32_t interval_ms = 100)
+        : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000) {}
 
     bool initialize() override {
         if (!gnss_.begin()) {
@@ -77,8 +75,6 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
-
-        observer_->feed_gnss(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

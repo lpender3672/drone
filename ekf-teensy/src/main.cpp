@@ -137,11 +137,12 @@ void setup() {
     ekf->reset(shared::NavigationState{});
     //ekf->debugCallback = ekfDebug;
 
-    // Create sensors
-    imuSensor  = new BNO055Imu(ekf, 10);   // 100 Hz
-    gnssSensor = new UbloxGnss(ekf, 100);  // 10 Hz
-    magSensor  = new BNO055Mag(imuSensor->bno(), ekf, 20);  // 50 Hz
-    baroSensor = new BMP280Baro(ekf, 50);  // 20 Hz
+    // Create sensors. They are no longer coupled to the EKF — the loop
+    // below forwards each fresh reading to the observer explicitly.
+    imuSensor  = new BNO055Imu(10);   // 100 Hz
+    gnssSensor = new UbloxGnss(100);  // 10 Hz
+    magSensor  = new BNO055Mag(imuSensor->bno(), 20);  // 50 Hz
+    baroSensor = new BMP280Baro(50);  // 20 Hz
 
     // Configure loggers
     imu_log.save_to_sd  = sd_ok;
@@ -171,10 +172,27 @@ void loop() {
     uint32_t now_us = micros();
     uint32_t now_ms = now_us / 1000;
 
+    // Tick each sensor and forward its fresh reading to the EKF. Sensors
+    // no longer call feed_*() themselves — main owns the observer wiring.
+    if (imuSensor->is_due(now_us)) {
+        imuSensor->update(now_us);
+        if (auto r = imuSensor->get_reading()) ekf->feed_imu(*r);
+    }
+    if (magSensor->is_due(now_us)) {
+        magSensor->update(now_us);
+        if (auto r = magSensor->get_reading()) ekf->feed_mag(*r);
+    }
+    if (baroSensor->is_due(now_us)) {
+        baroSensor->update(now_us);
+        if (auto r = baroSensor->get_reading()) ekf->feed_baro(*r);
+    }
+    // gnssSensor is constructed but not added to the active loop yet
+    // (matches the old behaviour: sensor_entries[3] was commented out).
+
+    // Logging is independent of the feed step — log_to() consumes the
+    // new-reading flag separately.
     for (size_t i = 0; i < NUM_SENSORS; i++) {
-        auto& [sensor, logger] = sensor_entries[i];
-        if (sensor->is_due(now_us)) sensor->update(now_us);
-        sensor->log_to(*logger, now_ms);
+        sensor_entries[i].sensor->log_to(*sensor_entries[i].logger, now_ms);
     }
 
     printTimings();

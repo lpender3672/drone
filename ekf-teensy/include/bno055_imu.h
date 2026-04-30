@@ -6,21 +6,23 @@
 #include <sensor_constants.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
-#include <observer.h>
 
 /**
  * BNO055 IMU sensor implementation for Teensy.
  * Provides accelerometer and gyroscope readings from the BNO055 chip.
+ *
+ * Decoupled from the EKF: produces a reading each tick; the caller (main
+ * loop or, later, an observer block wired via connect()) is responsible
+ * for forwarding readings to the navigation filter.
  */
 class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055 bno_;
-    shared::INavObserver* observer_;
 
 public:
-    BNO055Imu(shared::INavObserver* observer, uint32_t interval_ms = 10)
+    explicit BNO055Imu(uint32_t interval_ms = 10)
         : Sensor<sensors::ImuReading>("IMU", (uint64_t)interval_ms * 1000),
-          bno_(55, 0x28), observer_(observer) {}
+          bno_(55, 0x28) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
 
@@ -58,8 +60,6 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
-
-        observer_->feed_imu(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

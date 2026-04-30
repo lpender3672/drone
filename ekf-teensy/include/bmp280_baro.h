@@ -5,16 +5,15 @@
 #include <sensor_readings.h>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BMP280.h>
-#include <observer.h>
 #include <Wire.h>
 
 /**
  * BMP280 barometer sensor implementation for Teensy.
- * Provides pressure, temperature, and altitude readings.
+ * Provides pressure, temperature, and altitude readings. Decoupled from
+ * the EKF: caller forwards the produced reading.
  */
 class BMP280Baro : public sensors::Sensor<sensors::BaroReading>, public sensors::SensorTiming {
 private:
-    shared::INavObserver* observer_;
     bool ref_set_ = false;
     float p0_pa_ = 101325.0f;  // Standard atmospheric pressure
 
@@ -28,9 +27,8 @@ private:
     }
 
 public:
-    BMP280Baro(shared::INavObserver* observer, uint32_t interval_ms = 50)
-        : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000),
-          observer_(observer) {}
+    explicit BMP280Baro(uint32_t interval_ms = 50)
+        : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000) {}
 
     void set_reference_pressure(float pressure_pa) {
         p0_pa_ = pressure_pa;
@@ -132,8 +130,6 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
-
-        observer_->feed_baro(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);
