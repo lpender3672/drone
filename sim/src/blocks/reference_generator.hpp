@@ -20,7 +20,7 @@ public:
         CUSTOM
     };
 
-    ScalarReferenceGenerator(const std::string& name, uint32_t update_period_us = 0.0)
+    ScalarReferenceGenerator(const std::string& name, uint32_t update_period_us = 0u)
         : TypedBlock(name, "none", "reference", update_period_us)
     {}
 

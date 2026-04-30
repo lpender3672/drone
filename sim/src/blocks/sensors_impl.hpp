@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim_sensor.hpp"
+#include "../data/gnss_origin.hpp"
 #include "../data/sensor_reading.hpp"
 #include <sensor_constants.h>
 
@@ -106,17 +107,14 @@ public:
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
 
-    // Set origin for local NED to GPS conversion
-    void set_origin(double lat_deg, double lon_deg, double alt_m) {
-        origin_lla_ = Vec3(lat_deg, lon_deg, alt_m);
-    }
+    void set_origin(const GnssOrigin& origin) { origin_ = origin; }
 
 protected:
     GnssData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
         GnssData reading;
 
         // Convert local NED to GPS (simplified, flat earth)
-        const double lat_rad = origin_lla_.x() * M_PI / 180.0;
+        const double lat_rad = origin_.lat_deg * M_PI / 180.0;
         const double meters_per_deg_lat = sensors::METERS_PER_DEG_LAT;
         const double meters_per_deg_lon = sensors::meters_per_deg_lon(lat_rad);
 
@@ -127,9 +125,9 @@ protected:
         );
 
         Vec3 lla_result;
-        lla_result.x() = origin_lla_.x() + true_state.position.x() / meters_per_deg_lat + pos_noise.x();
-        lla_result.y() = origin_lla_.y() + true_state.position.y() / meters_per_deg_lon + pos_noise.y();
-        lla_result.z() = origin_lla_.z() - true_state.position.z() + pos_noise.z();  // NED z is down
+        lla_result.x() = origin_.lat_deg + true_state.position.x() / meters_per_deg_lat + pos_noise.x();
+        lla_result.y() = origin_.lon_deg + true_state.position.y() / meters_per_deg_lon + pos_noise.y();
+        lla_result.z() = origin_.alt_m   - true_state.position.z() + pos_noise.z();  // NED z is down
         reading.set_lla(lla_result);
 
         Vec3 vel_noise(
@@ -150,7 +148,7 @@ protected:
 
 private:
     NoiseParams noise_params_;
-    Vec3 origin_lla_ = Vec3(52.2053, 0.1218, 10.0);  // Default: Cambridge, UK
+    GnssOrigin  origin_;
 };
 
 /**
@@ -175,9 +173,11 @@ public:
 
 protected:
     MagData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
-        // Reference NED field (unit vector) — must match EKF's m_n
-        static const Vec3 m_n(0.40, 0.0, 0.92);
-        static const double field_magnitude = 50.0;  // µT
+        // Reference NED field (unit vector) — matches the EKF's default for Cambridge, UK
+        // (WMM 2025: inclination ~67°, declination ~1° W). Override both ends together
+        // if you change the sim's GPS origin to another location.
+        static const Vec3 m_n(0.391, -0.007, 0.921);
+        static const double field_magnitude = 49.0;  // µT (Cambridge, WMM 2025)
 
         Vec3 m_body = true_state.R_bn() * m_n * field_magnitude;
 

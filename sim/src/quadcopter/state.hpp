@@ -54,6 +54,14 @@ public:
 class NavigationState : public shared::NavigationState, public InterBlockData<17> {
 public:
     NavigationState() = default;
+    explicit NavigationState(const shared::TrueState& base) : shared::NavigationState(base) {}
+
+    // Assign just the navigation kinematics from a shared::NavigationState
+    // value, leaving the InterBlockData<17> sub-data (used by the logger)
+    // untouched. Wraps what would otherwise be a slicing static_cast.
+    void assign_nav(const shared::NavigationState& src) {
+        static_cast<shared::NavigationState&>(*this) = src;
+    }
 
     std::string type_name() const override { return "NavigationState"; }
 };

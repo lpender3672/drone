@@ -19,7 +19,7 @@ public:
         if (!this->is_due(current_time_us)) return false;
         this->mark_updated(current_time_us);
 
-        feed_sensors(this->input_.value);
+        feed_sensors(this->input_.get());
         this->output_.value = observer_->output();
         return true;
     }

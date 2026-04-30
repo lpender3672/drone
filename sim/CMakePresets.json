@@ -16,9 +16,34 @@
             }
         },
         {
+            "name": "base-windows",
+            "hidden": true,
+            "inherits": "base",
+            "generator": "MinGW Makefiles",
+            "cacheVariables": {
+                "CMAKE_CXX_COMPILER": "g++"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "base-unix",
+            "hidden": true,
+            "inherits": "base",
+            "generator": "Unix Makefiles",
+            "condition": {
+                "type": "notEquals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
             "name": "debug",
             "displayName": "Debug",
-            "inherits": "base",
+            "inherits": ["base-windows", "base-unix"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "SIM_BUILD_TESTS": "OFF"
@@ -27,7 +52,7 @@
         {
             "name": "release",
             "displayName": "Release",
-            "inherits": "base",
+            "inherits": ["base-windows", "base-unix"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "SIM_BUILD_TESTS": "OFF"
@@ -36,7 +61,7 @@
         {
             "name": "test",
             "displayName": "Test",
-            "inherits": "base",
+            "inherits": ["base-windows", "base-unix"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
                 "SIM_BUILD_TESTS": "ON"
@@ -45,7 +70,7 @@
         {
             "name": "release-test",
             "displayName": "Release with Tests",
-            "inherits": "base",
+            "inherits": ["base-windows", "base-unix"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
                 "SIM_BUILD_TESTS": "ON"

@@ -4,23 +4,22 @@
 #include <sensor_base.h>
 #include <sensor_readings.h>
 #include <Adafruit_BNO055.h>
-#include <observer.h>
 
 #include "teensy_sensor_logger.h"
 
 /**
  * BNO055 magnetometer sensor implementation for Teensy.
- * Shares the BNO055 chip with the IMU sensor.
+ * Shares the BNO055 chip with the IMU sensor. Produces readings; caller
+ * forwards them to the observer (see BNO055Imu for the rationale).
  */
 class BNO055Mag : public sensors::Sensor<sensors::MagReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
-    shared::INavObserver* observer_;
 
 public:
-    BNO055Mag(Adafruit_BNO055* bno, shared::INavObserver* observer, uint32_t interval_ms = 20)
+    BNO055Mag(Adafruit_BNO055* bno, uint32_t interval_ms = 20)
         : Sensor<sensors::MagReading>("Mag", (uint64_t)interval_ms * 1000),
-          bno_(bno), observer_(observer) {}
+          bno_(bno) {}
 
     bool initialize() override {
         // BNO055 initialized by IMU sensor
@@ -44,8 +43,6 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
-
-        observer_->feed_mag(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

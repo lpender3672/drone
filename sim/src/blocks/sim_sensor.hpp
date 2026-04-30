@@ -51,7 +51,7 @@ public:
         
         this->mark_updated(current_time_us);
 
-        const auto& true_state = this->input_.value;
+        const auto& true_state = this->input_.get();
 
         ReadingT reading = sample(true_state, current_time_us / 1e6);
         reading.set_timestamp(current_time_us);

@@ -99,6 +99,18 @@ protected:
     Scalar baro_noise_var_ = Scalar(1.0);
     Vec3 gravity_noise_var_{Vec3::Constant(Scalar(1e-4))};
 
+    // Reference magnetic field (unit vector, NED). Default: WMM 2025 at Cambridge, UK
+    // (52.2053°N, 0.1218°E) — inclination ~67°, declination ~1° W, so the normalised
+    // NED components are approximately (cos(incl), -sin(decl)·cos(incl), sin(incl)).
+    // Override with set_mag_reference() for other operating locations.
+    Vec3 mag_reference_{Scalar(0.391), Scalar(-0.007), Scalar(0.921)};
+
+public:
+    void set_mag_reference(const Vec3& m_n_unit) { mag_reference_ = m_n_unit.normalized(); }
+    Vec3 mag_reference() const { return mag_reference_; }
+
+protected:
+
     void inject_error(const ErrorVector& dx) override;
 
     static Quat quat_from_state(const Vec4& qv) {

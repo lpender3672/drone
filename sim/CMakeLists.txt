@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 include(FetchContent)
 project(drone_sim VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -15,6 +15,12 @@ endif()
 
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
+
+# MinGW on Windows: debug builds with heavy template instantiation exceed the
+# default COFF section limit. -Wa,-mbig-obj raises it to 2^31 sections.
+if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    add_compile_options(-Wa,-mbig-obj)
+endif()
 
 # Header-only library (interface library for header-only code)
 add_library(sim_lib INTERFACE)

@@ -20,7 +20,7 @@ struct PidParams {
 
 class PidBlock : public TypedBlock<PidInput, Scalar> {
 public:
-    explicit PidBlock(const std::string& name, uint32_t update_period_us = 0.0)
+    explicit PidBlock(const std::string& name, uint32_t update_period_us = 0u)
         : TypedBlock(name, "input", "output", update_period_us) {}
 
     void set_params(const PidParams& params) { params_ = params; }
@@ -39,21 +39,26 @@ public:
 
         double dt = get_dt_us(current_time_us) / 1e6;
 
+        // Capture before mark_updated() flips has_updated_ — the I/D guards
+        // below need to see the pre-tick state so the first call after
+        // construction or reset() doesn't integrate or differentiate against
+        // a zero history.
+        const bool first_tick = !has_updated_;
         mark_updated(current_time_us);
 
-        const auto& in = input_.value;
+        const auto& in = input_.get();
         double error = in.setpoint() - in.measurement();
 
         double p = params_.kp * error;
 
-        if (has_updated_) {
+        if (!first_tick) {
             integral_ += error * dt;
             integral_ = std::clamp(integral_, params_.integral_min, params_.integral_max);
         }
         double i = params_.ki * integral_;
 
         double d = 0.0;
-        if (has_updated_ && dt > 0.0) {
+        if (!first_tick && dt > 0.0) {
             d = params_.kd * (error - prev_error_) / dt;
         }
         prev_error_ = error;
