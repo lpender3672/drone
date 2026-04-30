@@ -4,6 +4,7 @@
 #include <sensor_base.h>
 #include <sensor_readings.h>
 #include <sensor_constants.h>
+#include <core/block.hpp>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BNO055.h>
 
@@ -18,6 +19,7 @@
 class BNO055Imu : public sensors::Sensor<sensors::ImuReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055 bno_;
+    shared::OutputPort<sensors::ImuReading> output_{"imu_out"};
 
 public:
     explicit BNO055Imu(uint32_t interval_ms = 10)
@@ -25,6 +27,7 @@ public:
           bno_(55, 0x28) {}
 
     Adafruit_BNO055* bno() { return &bno_; }
+    shared::OutputPort<sensors::ImuReading>& output() { return output_; }
 
     bool initialize() override {
         if (!bno_.begin()) {
@@ -60,6 +63,7 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
+        output_.set(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

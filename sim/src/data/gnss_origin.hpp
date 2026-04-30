@@ -1,15 +1,10 @@
 #pragma once
 
+#include "../../../shared/data/gnss_origin.hpp"
+
+// Moved to shared/ for cross-target use. This shim re-exports the type
+// under `namespace sim` so existing sim code that says `sim::GnssOrigin`
+// keeps compiling unchanged.
 namespace sim {
-
-// Geodetic origin used by the sim layer to bridge local-NED truth and the
-// geodetic coordinates the navigation filter expects. Owned by the vehicle
-// system and pushed into every block that needs it (GPS sensor, EKF init,
-// baro ground reference, alt-hold setpoint).
-struct GnssOrigin {
-    double lat_deg = 52.2053;  // Cambridge, UK
-    double lon_deg =  0.1218;
-    double alt_m   = 10.0;
-};
-
+using shared::GnssOrigin;
 } // namespace sim

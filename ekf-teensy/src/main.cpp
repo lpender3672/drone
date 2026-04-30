@@ -172,19 +172,20 @@ void loop() {
     uint32_t now_us = micros();
     uint32_t now_ms = now_us / 1000;
 
-    // Tick each sensor and forward its fresh reading to the EKF. Sensors
-    // no longer call feed_*() themselves — main owns the observer wiring.
+    // Tick each sensor and forward its fresh reading to the EKF via the
+    // sensor's output port. Once the vehicle composite arrives in Phase B.2
+    // these feeds will be replaced by connect(sensor.output(), vehicle.imu_input()).
     if (imuSensor->is_due(now_us)) {
         imuSensor->update(now_us);
-        if (auto r = imuSensor->get_reading()) ekf->feed_imu(*r);
+        ekf->feed_imu(imuSensor->output().get());
     }
     if (magSensor->is_due(now_us)) {
         magSensor->update(now_us);
-        if (auto r = magSensor->get_reading()) ekf->feed_mag(*r);
+        ekf->feed_mag(magSensor->output().get());
     }
     if (baroSensor->is_due(now_us)) {
         baroSensor->update(now_us);
-        if (auto r = baroSensor->get_reading()) ekf->feed_baro(*r);
+        ekf->feed_baro(baroSensor->output().get());
     }
     // gnssSensor is constructed but not added to the active loop yet
     // (matches the old behaviour: sensor_entries[3] was commented out).

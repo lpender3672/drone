@@ -3,6 +3,7 @@
 
 #include <sensor_base.h>
 #include <sensor_readings.h>
+#include <core/block.hpp>
 #include "teensy_sensor_logger.h"
 #include <Adafruit_BMP280.h>
 #include <Wire.h>
@@ -18,6 +19,7 @@ private:
     float p0_pa_ = 101325.0f;  // Standard atmospheric pressure
 
     Adafruit_BMP280 bmp_;
+    shared::OutputPort<sensors::BaroReading> output_{"baro_out"};
 
     // ISA approximation for altitude from pressure
     // h = 44330 * (1 - (p/p0)^(1/5.255))
@@ -29,6 +31,8 @@ private:
 public:
     explicit BMP280Baro(uint32_t interval_ms = 50)
         : Sensor<sensors::BaroReading>("Baro", (uint64_t)interval_ms * 1000) {}
+
+    shared::OutputPort<sensors::BaroReading>& output() { return output_; }
 
     void set_reference_pressure(float pressure_pa) {
         p0_pa_ = pressure_pa;
@@ -130,6 +134,7 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
+        output_.set(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);
