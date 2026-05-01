@@ -1,6 +1,7 @@
 #include <Eigen/Dense>
 #include <ekf16d.h>
 #include <sensor_interface.h>
+#include <blocks/quadrotor_vehicle.hpp>
 
 #include <Arduino.h>
 #include "bno055_imu.h"
@@ -16,7 +17,13 @@ extern unsigned long _heap_end;
 extern char *__brkval;
 int freeram() { return (char *)&_heap_end - __brkval; }
 
-// EKF instance - use pointer for deferred initialization
+// Vehicle composite — owns the EKF (and the alt-hold + attitude controller,
+// which run but currently have no actuators wired on this hardware). Same
+// class as the sim uses; sensors connect into its input ports.
+shared::QuadrotorVehicle* vehicle = nullptr;
+
+// Non-owning view of the EKF kept for printStates() etc. — the vehicle
+// owns the unique_ptr<INavObserver>; this is just a typed handle.
 EKF16d* ekf = nullptr;
 
 // Sensor instances
@@ -123,26 +130,48 @@ void setup() {
         Serial.flush();
     }
 
-    Serial.println("Initializing EKF...");
+    Serial.println("Initializing EKF and vehicle composite...");
     Serial.flush();
 
-    // Create EKF on heap (deferred from static init)
-    ekf = new EKF16d(TEENSY_PTYPE_DATA_PARAMS);
+    // Build the EKF as a unique_ptr, capture a non-owning typed handle for
+    // printStates(), then move it into the vehicle which takes ownership.
+    auto ekf_ptr = std::make_unique<EKF16d>(TEENSY_PTYPE_DATA_PARAMS);
+    ekf = ekf_ptr.get();
 
-    // Reset with a default NavigationState — identity quaternion, zero vel/biases,
-    // zero position (GNSS first fix will snap it). reset() handles sensible P0
-    // per block (pos/vel/att/ba/bg/bbaro) instead of a uniform 0.1 identity,
-    // and avoids the zero-quaternion degeneracy that initialize(Zero(), ...)
-    // would introduce.
+    // Vehicle update period set to 10 ms so the EKF predicts at 100 Hz —
+    // the IMU's own rate. Slower would skip predicts; faster would either
+    // re-feed stale IMU samples (now gated by timestamp inside the EKF
+    // block) or burn cycles on no-op ticks.
+    vehicle = new shared::QuadrotorVehicle(
+        "quad",
+        std::move(ekf_ptr),
+        shared::AttitudePidController::Params{},  // controller runs but has no actuators wired yet
+        shared::GnssOrigin{},                      // default Cambridge UK; GNSS first fix will refine
+        10000,   // sensor / EKF period (us) — 100 Hz, matches IMU
+        10000    // control period (us) — same; controller output unused on this hw
+    );
+
+    // Reset directly on the EKF to preserve the existing zero-NavigationState
+    // behaviour (don't go through vehicle->initialize() which would convert a
+    // TrueState through the GNSS origin and seed the EKF at Cambridge — we
+    // want the GNSS first fix to snap position instead).
     ekf->reset(shared::NavigationState{});
     //ekf->debugCallback = ekfDebug;
 
-    // Create sensors. They are no longer coupled to the EKF — the loop
-    // below forwards each fresh reading to the observer explicitly.
+    // Create sensors. Their output ports get wired into the vehicle below.
     imuSensor  = new BNO055Imu(10);   // 100 Hz
     gnssSensor = new UbloxGnss(100);  // 10 Hz
     magSensor  = new BNO055Mag(imuSensor->bno(), 20);  // 50 Hz
     baroSensor = new BMP280Baro(50);  // 20 Hz
+
+    // One-time topology: sensor outputs → vehicle inputs. From here on the
+    // vehicle's update() reads through these connections; nothing in the
+    // loop body wires data anymore.
+    shared::connect(imuSensor->output(),  vehicle->imu_input());
+    shared::connect(magSensor->output(),  vehicle->mag_input());
+    shared::connect(baroSensor->output(), vehicle->baro_input());
+    // gnssSensor wired but inactive — see below.
+    shared::connect(gnssSensor->output(), vehicle->gnss_input());
 
     // Configure loggers
     imu_log.save_to_sd  = sd_ok;
@@ -172,25 +201,22 @@ void loop() {
     uint32_t now_us = micros();
     uint32_t now_ms = now_us / 1000;
 
-    // Tick each sensor and forward its fresh reading to the EKF. Sensors
-    // no longer call feed_*() themselves — main owns the observer wiring.
-    if (imuSensor->is_due(now_us)) {
-        imuSensor->update(now_us);
-        if (auto r = imuSensor->get_reading()) ekf->feed_imu(*r);
-    }
-    if (magSensor->is_due(now_us)) {
-        magSensor->update(now_us);
-        if (auto r = magSensor->get_reading()) ekf->feed_mag(*r);
-    }
-    if (baroSensor->is_due(now_us)) {
-        baroSensor->update(now_us);
-        if (auto r = baroSensor->get_reading()) ekf->feed_baro(*r);
-    }
-    // gnssSensor is constructed but not added to the active loop yet
-    // (matches the old behaviour: sensor_entries[3] was commented out).
+    // Tick each sensor at its own rate. They write to their output ports;
+    // the vehicle's EKF reads through the connect() wiring set up in setup().
+    // gnssSensor is constructed and connected but its update() is not driven
+    // here yet — preserves the previous "GNSS inactive" behaviour while the
+    // antenna setup is being validated.
+    if (imuSensor->is_due(now_us))  imuSensor->update(now_us);
+    if (magSensor->is_due(now_us))  magSensor->update(now_us);
+    if (baroSensor->is_due(now_us)) baroSensor->update(now_us);
+
+    // Tick the vehicle — runs the EKF (predict + measurement updates),
+    // alt-hold, and attitude controller. Motor output is computed but
+    // not wired to actuators on this hardware.
+    vehicle->update(now_us);
 
     // Logging is independent of the feed step — log_to() consumes the
-    // new-reading flag separately.
+    // sensor's own new-reading flag, which is set by sensor->update().
     for (size_t i = 0; i < NUM_SENSORS; i++) {
         sensor_entries[i].sensor->log_to(*sensor_entries[i].logger, now_ms);
     }

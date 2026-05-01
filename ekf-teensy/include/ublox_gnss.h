@@ -4,6 +4,7 @@
 #include <sensor_base.h>
 #include <sensor_readings.h>
 #include <sensor_constants.h>
+#include <core/block.hpp>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 
 #include "teensy_sensor_logger.h"
@@ -16,6 +17,7 @@
 class UbloxGnss : public sensors::Sensor<sensors::GnssReading>, public sensors::SensorTiming {
 private:
     SFE_UBLOX_GNSS gnss_;
+    shared::OutputPort<sensors::GnssReading> output_{"gnss_out"};
 
     // Noise parameters
     double pos_std_ = 2.0;  // meters
@@ -24,6 +26,8 @@ private:
 public:
     explicit UbloxGnss(uint32_t interval_ms = 100)
         : Sensor<sensors::GnssReading>("GNSS", (uint64_t)interval_ms * 1000) {}
+
+    shared::OutputPort<sensors::GnssReading>& output() { return output_; }
 
     bool initialize() override {
         if (!gnss_.begin()) {
@@ -75,6 +79,7 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
+        output_.set(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

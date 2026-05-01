@@ -3,6 +3,7 @@
 
 #include <sensor_base.h>
 #include <sensor_readings.h>
+#include <core/block.hpp>
 #include <Adafruit_BNO055.h>
 
 #include "teensy_sensor_logger.h"
@@ -15,11 +16,14 @@
 class BNO055Mag : public sensors::Sensor<sensors::MagReading>, public sensors::SensorTiming {
 private:
     Adafruit_BNO055* bno_;  // Shared with IMU
+    shared::OutputPort<sensors::MagReading> output_{"mag_out"};
 
 public:
     BNO055Mag(Adafruit_BNO055* bno, uint32_t interval_ms = 20)
         : Sensor<sensors::MagReading>("Mag", (uint64_t)interval_ms * 1000),
           bno_(bno) {}
+
+    shared::OutputPort<sensors::MagReading>& output() { return output_; }
 
     bool initialize() override {
         // BNO055 initialized by IMU sensor
@@ -43,6 +47,7 @@ public:
         latest_reading_.valid = true;
 
         new_reading_available_ = true;
+        output_.set(latest_reading_);
 
         endTiming();
         markUpdated(current_time_us);

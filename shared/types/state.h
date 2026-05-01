@@ -77,6 +77,12 @@ struct NavigationState : public TrueState {
 
     NavigationState() = default;
     explicit NavigationState(const TrueState& base) : TrueState(base), valid(true) {}
+
+    // Default override for templated callers that may receive a derived
+    // NavigationState. The sim subclass overrides this with a slicing
+    // assignment that preserves its InterBlockData<> sub-data; here on the
+    // base it's just a normal copy.
+    void assign_nav(const NavigationState& src) { *this = src; }
 };
 
 } // namespace shared

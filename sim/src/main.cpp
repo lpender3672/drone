@@ -7,8 +7,8 @@
 // Core
 #include "core/simulation.hpp"
 
-// Vehicle system
-#include "quadcopter/system.hpp"
+// Vehicle plant (sim-only; embedded uses shared::QuadrotorVehicle directly)
+#include "quadcopter/plant.hpp"
 
 // Test-harness disturbance blocks
 #include "blocks/signal_generator.hpp"
@@ -56,9 +56,9 @@ int main() {
     dyn_params.propeller.rho   = 1.225;
 
     // =========================================
-    // Vehicle system (sensors + EKF + control + dynamics)
+    // Vehicle plant (sensors + vehicle composite + dynamics)
     // =========================================
-    auto system = sim_runner.add_block(std::make_unique<QuadrotorSystem>(
+    auto plant = sim_runner.add_block(std::make_unique<QuadrotorPlant>(
         "quad",
         std::make_unique<ImuSensor<TrueState>>("imu",   1000,      0),
         std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000),
@@ -69,7 +69,7 @@ int main() {
     ));
 
     connect(dist_gen->output(),    dist_torque->input());
-    connect(dist_torque->output(), system->disturbance_torque_input());
+    connect(dist_torque->output(), plant->disturbance_torque_input());
 
     // =========================================
     // Initialize (resets dynamics, EKF, baro ref, alt-hold setpoint)
@@ -79,11 +79,11 @@ int main() {
     init.velocity         = Vec3::Zero();
     init.attitude         = Quat::Identity();
     init.angular_velocity = Vec3::Zero();
-    system->initialize(init);
+    plant->initialize(init);
 
-    system->ekf().set_gnss_enabled(true);
-    system->ekf().set_baro_enabled(true);
-    system->ekf().set_mag_enabled(true);
+    plant->ekf().set_gnss_enabled(true);
+    plant->ekf().set_baro_enabled(true);
+    plant->ekf().set_mag_enabled(true);
 
     // =========================================
     // Attitude reference (thrust driven by alt-hold)
@@ -92,7 +92,7 @@ int main() {
     ref.set_roll(0.0);
     ref.set_pitch(0.0);
     ref.set_yaw(0.0);
-    system->controller().reference_input().set(ref);
+    plant->controller().reference_input().set(ref);
 
     // =========================================
     // CSV output
@@ -115,12 +115,12 @@ int main() {
     for (uint64_t t = 0; t < END_US; t += DT_US) {
         sim_runner.step();
 
-        const auto& s      = system->dynamics().output().get();
+        const auto& s      = plant->dynamics().output().get();
         Vec3 euler         = s.euler_angles();
         Vec3 omega_dps     = s.angular_velocity * (180.0 / M_PI);
         double dist_nm     = dist_gen->value();
 
-        const auto& ekf_est = system->ekf().output().get();
+        const auto& ekf_est = plant->ekf().output().get();
         Vec3 ekf_euler      = ekf_est.euler_angles();
 
         csv << (t / 1e6)

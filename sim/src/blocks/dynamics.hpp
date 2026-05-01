@@ -48,11 +48,8 @@ public:
         for (uint64_t i = 0; i < num_steps; ++i) {
             step_dynamics(sub_dt_s);
         }
-        
-        this->output_.value.set_timestamp(current_time_us);
+
         this->mark_updated(current_time_us);
-        this->notify_output(this->output_.value);
-        
         return true;
     }
 

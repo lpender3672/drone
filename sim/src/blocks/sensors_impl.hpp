@@ -2,7 +2,7 @@
 
 #include "sim_sensor.hpp"
 #include "../data/gnss_origin.hpp"
-#include "../data/sensor_reading.hpp"
+#include <sensor_readings.h>
 #include <sensor_constants.h>
 
 namespace sim {
@@ -11,7 +11,7 @@ namespace sim {
  * Outputs accelerometer and gyroscope readings with noise and bias.
  */
 template<typename TrueStateT>
-class ImuSensor : public SensorBlock<TrueStateT, ImuData> {
+class ImuSensor : public SensorBlock<TrueStateT, sensors::ImuMeasurement> {
 public:
     struct NoiseParams {
         // Gyroscope
@@ -26,7 +26,7 @@ public:
     ImuSensor(const std::string& name = "imu", 
               uint32_t update_period_us = 1000, 
               uint32_t latency_us = 1000)
-        : SensorBlock<TrueStateT, ImuData>(name, update_period_us, latency_us)
+        : SensorBlock<TrueStateT, sensors::ImuMeasurement>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -37,8 +37,8 @@ public:
     }
 
 protected:
-    ImuData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
-        ImuData reading;
+    sensors::ImuMeasurement sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        sensors::ImuMeasurement reading;
 
         // Random walk on biases
         gyro_bias_ += Vec3(
@@ -91,7 +91,7 @@ private:
  * GPS sensor model.
  */
 template<typename TrueStateT>
-class GpsSensor : public SensorBlock<TrueStateT, GnssData> {
+class GpsSensor : public SensorBlock<TrueStateT, sensors::GnssMeasurement> {
 public:
     struct NoiseParams {
         double position_stddev = 2.5;    // [m] horizontal position noise
@@ -102,7 +102,7 @@ public:
     GpsSensor(const std::string& name = "gps",
               uint32_t update_period_us = 100000,
               uint32_t latency_us = 100000)
-        : SensorBlock<TrueStateT, GnssData>(name, update_period_us, latency_us)
+        : SensorBlock<TrueStateT, sensors::GnssMeasurement>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
@@ -110,8 +110,8 @@ public:
     void set_origin(const GnssOrigin& origin) { origin_ = origin; }
 
 protected:
-    GnssData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
-        GnssData reading;
+    sensors::GnssMeasurement sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+        sensors::GnssMeasurement reading;
 
         // Convert local NED to GPS (simplified, flat earth)
         const double lat_rad = origin_.lat_deg * M_PI / 180.0;
@@ -157,7 +157,7 @@ private:
  * Reference vector matches the hardcoded value in EKF16d::update_magnetometer.
  */
 template<typename TrueStateT>
-class MagSensor : public SensorBlock<TrueStateT, MagData> {
+class MagSensor : public SensorBlock<TrueStateT, sensors::MagMeasurement> {
 public:
     struct NoiseParams {
         double noise_stddev = 0.5;  // [µT] per axis white noise
@@ -166,13 +166,13 @@ public:
     MagSensor(const std::string& name = "mag",
               uint32_t update_period_us = 20000,
               uint32_t latency_us = 5000)
-        : SensorBlock<TrueStateT, MagData>(name, update_period_us, latency_us)
+        : SensorBlock<TrueStateT, sensors::MagMeasurement>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
 
 protected:
-    MagData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+    sensors::MagMeasurement sample(const TrueStateT& true_state, uint64_t current_time_us) override {
         // Reference NED field (unit vector) — matches the EKF's default for Cambridge, UK
         // (WMM 2025: inclination ~67°, declination ~1° W). Override both ends together
         // if you change the sim's GPS origin to another location.
@@ -187,7 +187,7 @@ protected:
             this->gaussian_noise(noise_params_.noise_stddev)
         );
 
-        MagData reading;
+        sensors::MagMeasurement reading;
         reading.set_field(m_body + noise);
         reading.valid = true;
 
@@ -204,7 +204,7 @@ private:
  * Converts true NED z-position to altitude with white noise and bias random walk.
  */
 template<typename TrueStateT>
-class BaroSensor : public SensorBlock<TrueStateT, BaroData> {
+class BaroSensor : public SensorBlock<TrueStateT, sensors::BaroMeasurement> {
 public:
     struct NoiseParams {
         double altitude_noise_stddev = 0.3;   // [m] white noise
@@ -214,21 +214,21 @@ public:
     BaroSensor(const std::string& name = "baro",
                uint32_t update_period_us = 50000,
                uint32_t latency_us = 50000)
-        : SensorBlock<TrueStateT, BaroData>(name, update_period_us, latency_us)
+        : SensorBlock<TrueStateT, sensors::BaroMeasurement>(name, update_period_us, latency_us)
     {}
 
     void set_noise_params(const NoiseParams& params) { noise_params_ = params; }
     void set_ground_alt_m(double alt_m) { ground_alt_m_ = alt_m; }
 
 protected:
-    BaroData sample(const TrueStateT& true_state, uint64_t current_time_us) override {
+    sensors::BaroMeasurement sample(const TrueStateT& true_state, uint64_t current_time_us) override {
         // NED z is positive-down; altitude is positive-up relative to ground
         const double true_alt = ground_alt_m_ - true_state.position.z();
 
         bias_ += this->gaussian_noise(noise_params_.bias_stddev);
         const double meas_alt = true_alt + bias_ + this->gaussian_noise(noise_params_.altitude_noise_stddev);
 
-        BaroData reading;
+        sensors::BaroMeasurement reading;
         reading.altitude_m    = meas_alt;
         reading.pressure_pa   = 101325.0 * std::pow(1.0 - meas_alt / 44330.0, 5.255);
         reading.temperature_c = 15.0 - 0.0065 * meas_alt;
