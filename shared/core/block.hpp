@@ -1,6 +1,10 @@
 #pragma once
 
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <typeindex>
+#include <typeinfo>
 #include <vector>
 #include <functional>
 #include <memory>
@@ -8,17 +12,52 @@
 
 namespace shared {
 
+// Type-erased port base. Lets graph-driven wiring (Tier 2) look up ports
+// by string and connect them without knowing T at the wiring site. The
+// typed templates below — InputPort<T>, OutputPort<T> — derive from
+// this and override the virtuals.
+class IPort {
+public:
+    virtual ~IPort() = default;
+
+    virtual std::string_view port_name() const = 0;
+    virtual std::type_index  type_id()   const = 0;
+    virtual bool             is_input()  const = 0;
+
+    // Called on an OUTPUT port to wire it to an input. The default impl
+    // throws — only outputs can drive a connection. OutputPort<T>
+    // overrides to type-check `in_port` against itself and call the
+    // existing typed connect() free function.
+    virtual void connect_to(IPort& in_port) {
+        (void)in_port;
+        throw std::invalid_argument(
+            "IPort::connect_to: only OutputPort can be a connection source");
+    }
+};
+
 // Forward declaration needed for InputPort::source pointer
 template<typename T>
 struct OutputPort;
 
 template<typename T>
-struct InputPort {
+struct InputPort;
+
+// Forward-declare the free connect() so OutputPort::connect_to() (defined
+// before connect()'s definition below) can call it.
+template<typename T>
+void connect(OutputPort<T>& out, InputPort<T>& in);
+
+template<typename T>
+struct InputPort : public IPort {
     std::string name;
     bool connected = false;
     const OutputPort<T>* source = nullptr;
 
     explicit InputPort(const std::string& n) : name(n) {}
+
+    std::string_view port_name() const override { return name; }
+    std::type_index  type_id()   const override { return typeid(T); }
+    bool             is_input()  const override { return true; }
 
     // Push a value into a port that has no upstream block (e.g. an external
     // reference input, or a parent composite forwarding into a child).
@@ -39,14 +78,33 @@ private:
 };
 
 template<typename T>
-struct OutputPort {
+struct OutputPort : public IPort {
     std::string name;
     T value{};
 
     explicit OutputPort(const std::string& n) : name(n) {}
 
+    std::string_view port_name() const override { return name; }
+    std::type_index  type_id()   const override { return typeid(T); }
+    bool             is_input()  const override { return false; }
+
     void set(const T& v) { value = v; }
     const T& get() const { return value; }
+
+    // Type-check `in_port` against this output's T, verify it's an input,
+    // then perform the typed wiring. Throws on type or direction mismatch.
+    void connect_to(IPort& in_port) override {
+        if (!in_port.is_input()) {
+            throw std::invalid_argument(
+                "OutputPort::connect_to: target is not an input port");
+        }
+        if (in_port.type_id() != type_id()) {
+            throw std::invalid_argument(
+                "OutputPort::connect_to: type mismatch between source and destination");
+        }
+        auto& typed_in = static_cast<InputPort<T>&>(in_port);
+        ::shared::connect(*this, typed_in);
+    }
 };
 
 // Wire an output port directly to an input port.
@@ -104,6 +162,16 @@ public:
         output_callbacks_.clear();
     }
 
+    // Look up a registered port by its declared name (e.g. "in", "out",
+    // "imu", "gnss"). Returns nullptr if not registered. Used by
+    // graph-driven wiring where the wiring site doesn't know T.
+    IPort* port(std::string_view name) const {
+        for (auto* p : ports_) {
+            if (p->port_name() == name) return p;
+        }
+        return nullptr;
+    }
+
 protected:
     void notify_output(const IInterBlockData& data) {
         for (auto& cb : output_callbacks_) {
@@ -116,12 +184,21 @@ protected:
         has_updated_ = true;
     }
 
+    // Register a port by reference so port(name) can find it. Subclasses
+    // call this from their ctor; TypedBlock/SourceBlock do it for the
+    // ports they own. The Block does not take ownership — port lifetime
+    // is tied to the owning block instance.
+    void register_port(IPort& p) {
+        ports_.push_back(&p);
+    }
+
     std::string name_;
     uint32_t update_period_us_;
     uint64_t last_update_time_us_;
     bool has_updated_;
 
     std::vector<OutputCallback> output_callbacks_;
+    std::vector<IPort*>         ports_;
 };
 
 template<typename TIn, typename TOut>
@@ -137,7 +214,10 @@ public:
         : Block(name, update_period_us)
         , input_(input_name)
         , output_(output_name)
-    {}
+    {
+        this->register_port(input_);
+        this->register_port(output_);
+    }
 
     InputPort<TIn>& input() { return input_; }
     const InputPort<TIn>& input() const { return input_; }
@@ -158,7 +238,9 @@ public:
                 uint32_t update_period_us = 0)
         : Block(name, update_period_us)
         , output_(output_name)
-    {}
+    {
+        this->register_port(output_);
+    }
 
     OutputPort<TOut>& output() { return output_; }
     const OutputPort<TOut>& output() const { return output_; }

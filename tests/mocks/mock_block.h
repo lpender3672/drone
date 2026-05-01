@@ -12,8 +12,12 @@ class MockBlock : public shared::Block {
 public:
     explicit MockBlock(const std::string& name, uint32_t update_period_us = 0u)
         : Block(name, update_period_us)
-        , in_(name + ".in")
-        , out_(name + ".out") {}
+        , in_("in")
+        , out_("out")
+    {
+        this->register_port(in_);
+        this->register_port(out_);
+    }
 
     bool update(uint64_t t) override {
         if (!is_due(t)) return false;

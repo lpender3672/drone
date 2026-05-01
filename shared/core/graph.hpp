@@ -72,6 +72,53 @@ public:
         incoming_index_.emplace(&dst, idx);
     }
 
+    // String-keyed connect for graph specs. Path format is "block_name.port_name".
+    // Throws std::invalid_argument on any failure (missing block, missing port,
+    // type mismatch, direction mismatch, malformed path) — the underlying
+    // wiring is not mutated and no edge is recorded on failure.
+    void connect(std::string_view src_path, std::string_view dst_path) {
+        const auto [src_block_name, src_port_name] = split_path(src_path);
+        const auto [dst_block_name, dst_port_name] = split_path(dst_path);
+
+        Block* src = find(src_block_name);
+        if (!src) throw std::invalid_argument(
+            std::string("Graph::connect: source block '") +
+            std::string(src_block_name) + "' not found");
+
+        Block* dst = find(dst_block_name);
+        if (!dst) throw std::invalid_argument(
+            std::string("Graph::connect: destination block '") +
+            std::string(dst_block_name) + "' not found");
+
+        IPort* src_port = src->port(src_port_name);
+        if (!src_port) throw std::invalid_argument(
+            std::string("Graph::connect: port '") + std::string(src_port_name) +
+            "' not found on block '" + std::string(src_block_name) + "'");
+
+        IPort* dst_port = dst->port(dst_port_name);
+        if (!dst_port) throw std::invalid_argument(
+            std::string("Graph::connect: port '") + std::string(dst_port_name) +
+            "' not found on block '" + std::string(dst_block_name) + "'");
+
+        if (src_port->is_input()) throw std::invalid_argument(
+            std::string("Graph::connect: source port '") +
+            std::string(src_block_name) + "." + std::string(src_port_name) +
+            "' is an input, not an output");
+
+        // connect_to enforces the destination-is-input check and the type match,
+        // and only mutates port state on success. Recording the edge is the
+        // post-success bookkeeping step.
+        src_port->connect_to(*dst_port);
+
+        const std::size_t idx = edges_.size();
+        edges_.push_back(Edge{src,
+                              std::string(src_port_name),
+                              dst,
+                              std::string(dst_port_name)});
+        outgoing_index_.emplace(src, idx);
+        incoming_index_.emplace(dst, idx);
+    }
+
     std::vector<Edge> outgoing(const Block* src) const {
         std::vector<Edge> out;
         auto range = outgoing_index_.equal_range(src);
@@ -100,6 +147,18 @@ private:
     bool owns(const Block* b) const {
         for (const auto& p : blocks_) if (p.get() == b) return true;
         return false;
+    }
+
+    // Split "block.port" into its two parts. Throws if there's no '.'.
+    static std::pair<std::string_view, std::string_view>
+    split_path(std::string_view path) {
+        const auto dot = path.find('.');
+        if (dot == std::string_view::npos) {
+            throw std::invalid_argument(
+                std::string("Graph::connect: path '") +
+                std::string(path) + "' missing '.' separator");
+        }
+        return {path.substr(0, dot), path.substr(dot + 1)};
     }
 
     std::vector<std::unique_ptr<Block>>                blocks_;

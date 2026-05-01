@@ -55,8 +55,8 @@ TEST(Graph, ConnectRecordsSingleEdge) {
     const auto& e = g.edges().front();
     EXPECT_EQ(e.src_block, a);
     EXPECT_EQ(e.dst_block, b);
-    EXPECT_EQ(e.src_port, "a.out");
-    EXPECT_EQ(e.dst_port, "b.in");
+    EXPECT_EQ(e.src_port, "out");
+    EXPECT_EQ(e.dst_port, "in");
 }
 
 TEST(Graph, ConnectWiresUnderlyingPort) {
@@ -162,4 +162,91 @@ TEST(Graph, IntegrationTwoBlockPipelineTicks) {
     EXPECT_DOUBLE_EQ(b->out().get(), 7.0);
     EXPECT_EQ(a->update_count, 1);
     EXPECT_EQ(b->update_count, 1);
+}
+
+// ============================================================================
+// Slice 2: string-keyed Graph::connect (uses IPort lookup + virtual dispatch)
+// ============================================================================
+
+TEST(Graph, ConnectByStringWiresPortAndRecordsEdge) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    g.connect("a.out", "b.in");
+
+    EXPECT_EQ(g.edge_count(), 1u);
+    const auto& e = g.edges().front();
+    EXPECT_EQ(e.src_block, a);
+    EXPECT_EQ(e.dst_block, b);
+    EXPECT_EQ(e.src_port, "out");
+    EXPECT_EQ(e.dst_port, "in");
+
+    // Zero-copy: writes to a.out flow to b.in.
+    a->out().set(99.0);
+    EXPECT_DOUBLE_EQ(b->in().get(), 99.0);
+}
+
+TEST(Graph, ConnectByStringRejectsMissingBlock) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+
+    EXPECT_THROW(g.connect("ghost.out", "a.in"),  std::invalid_argument);
+    EXPECT_THROW(g.connect("a.out",     "ghost.in"), std::invalid_argument);
+    EXPECT_EQ(g.edge_count(), 0u);
+}
+
+TEST(Graph, ConnectByStringRejectsMissingPort) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    EXPECT_THROW(g.connect("a.fake_out", "b.in"),      std::invalid_argument);
+    EXPECT_THROW(g.connect("a.out",      "b.fake_in"), std::invalid_argument);
+    EXPECT_EQ(g.edge_count(), 0u);
+}
+
+TEST(Graph, ConnectByStringRejectsTypeMismatch) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<int>>("a"));
+    g.add_block(std::make_unique<MockBlock<double>>("b"));
+
+    EXPECT_THROW(g.connect("a.out", "b.in"), std::invalid_argument);
+    EXPECT_EQ(g.edge_count(), 0u);
+}
+
+TEST(Graph, ConnectByStringRejectsDirectionMismatch) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    // input as source: a.in is an input port, not a valid source.
+    EXPECT_THROW(g.connect("a.in", "b.in"), std::invalid_argument);
+    // output as destination: b.out is an output, not a valid sink.
+    EXPECT_THROW(g.connect("a.out", "b.out"), std::invalid_argument);
+    EXPECT_EQ(g.edge_count(), 0u);
+}
+
+TEST(Graph, ConnectByStringRejectsMalformedPath) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    // No '.' separator — can't tell what's a block name and what's a port.
+    EXPECT_THROW(g.connect("aout", "b.in"), std::invalid_argument);
+    EXPECT_THROW(g.connect("a.out", "bin"), std::invalid_argument);
+    EXPECT_EQ(g.edge_count(), 0u);
+}
+
+TEST(Graph, IntegrationByStringPipelineTicks) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    g.connect("a.out", "b.in");
+
+    a->in().set(13.5);
+    for (const auto& blk : g.blocks()) blk->update(0);
+
+    EXPECT_DOUBLE_EQ(b->out().get(), 13.5);
 }
