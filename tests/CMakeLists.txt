@@ -39,13 +39,15 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 endif()
 
 # Include paths shared by every test target — covers the shared/ block runtime,
-# sensor types, sim's wrapper headers, and the EKF math headers.
+# sensor types, sim's wrapper headers, the EKF math headers, and reusable
+# test mocks (tests/mocks/).
 add_library(test_includes INTERFACE)
 target_include_directories(test_includes INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/../shared
     ${CMAKE_CURRENT_LIST_DIR}/../shared/sensors
     ${CMAKE_CURRENT_LIST_DIR}/../sim/src
     ${CMAKE_CURRENT_LIST_DIR}/../ekf/shared
+    ${CMAKE_CURRENT_LIST_DIR}
 )
 target_link_libraries(test_includes INTERFACE Eigen3::Eigen)
 

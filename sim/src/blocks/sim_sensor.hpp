@@ -32,11 +32,11 @@ public:
             return latency_buffer_.back();
         }
 
-        uint64_t current_time = latency_buffer_.back().timestamp();
+        uint64_t current_time = latency_buffer_.back().timestamp_us;
         // Search from most-recent to oldest: return the newest reading that is
         // at least latency_us_ old (so the output advances every step, not stuck).
         for (auto it = latency_buffer_.rbegin(); it != latency_buffer_.rend(); ++it) {
-            if (current_time - it->timestamp() >= latency_us_) {
+            if (current_time - it->timestamp_us >= latency_us_) {
                 return *it;
             }
         }
@@ -54,14 +54,12 @@ public:
         const auto& true_state = this->input_.get();
 
         ReadingT reading = sample(true_state, current_time_us / 1e6);
-        reading.set_timestamp(current_time_us);
         reading.timestamp_us = current_time_us;
-        
+
         latency_buffer_.push_back(reading);
-        
+
         while (latency_buffer_.size() > 1) {
-            // Use timestamp() (IInterBlockData), NOT timestamp_us (sensor field, never set here)
-            uint64_t age = current_time_us - latency_buffer_.front().timestamp();
+            uint64_t age = current_time_us - latency_buffer_.front().timestamp_us;
             if (age > latency_us_ + 2 * this->update_period_us_) {
                 latency_buffer_.pop_front();
             } else {
@@ -70,13 +68,12 @@ public:
         }
         
         new_reading_available_ = true;
-        
+
         auto delayed = get_reading();
         if (delayed) {
             this->output_.value = *delayed;
-            this->notify_output(*delayed);
         }
-        
+
         return true;
     }
 

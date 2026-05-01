@@ -35,9 +35,10 @@ template<
 >
 class QuadrotorSystemT : public CompositeBlock {
 public:
-    // The vehicle template is parameterised on sim's data wrappers so its
-    // EKF input ports accept `sim::ImuData` etc. (which add InterBlockData<>
-    // for sim's logger).
+    // The vehicle is instantiated with the canonical sensors::*Measurement
+    // input types (same as embedded — sensor data has one type universe).
+    // Only the output state type is sim-specific (adds InterBlockData<>
+    // for the future per-block logger).
     using Vehicle = shared::QuadrotorVehicleT<
         QuadrotorEkfBlock,
         shared::AltitudeHoldBlock<NavigationState>,
