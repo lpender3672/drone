@@ -63,7 +63,7 @@ public:
         prev_error_ = error;
 
         double output = std::clamp(p + i + d, params_.output_min, params_.output_max);
-        output_.value = Scalar(output, current_time_us);
+        output_.value = Scalar(output);
 
         return true;
     }

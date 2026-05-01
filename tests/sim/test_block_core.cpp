@@ -119,6 +119,7 @@ public:
         src = add_child(std::make_unique<CounterBlock>("src", 0));
         rec = add_child(std::make_unique<RecorderBlock>("rec", 0));
         connect(src->output(), rec->input());
+        freeze();
     }
 };
 

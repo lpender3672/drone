@@ -91,7 +91,7 @@ public:
                                    + d_term,
                                    lower, upper);
 
-        this->output_.value = Scalar(thrust, current_time_us);
+        this->output_.value = Scalar(thrust);
         last_thrust_  = thrust;
         return true;
     }
