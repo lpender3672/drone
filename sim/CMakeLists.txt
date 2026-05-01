@@ -52,10 +52,5 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 
-# Testing option
-option(SIM_BUILD_TESTS "Build tests" OFF)
-
-if(SIM_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
-endif()
+# Tests live in the root-level tests/ tree alongside shared/ tests, not
+# inside sim/. Use `cmake --preset debug -S tests` to configure them.

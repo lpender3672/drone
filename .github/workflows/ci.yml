@@ -40,6 +40,24 @@ jobs:
       - name: Build
         run: cmake --build sim/build
 
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y libeigen3-dev libgtest-dev
+
+      - name: Configure
+        run: cmake -B tests/build -S tests -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build tests/build
+
+      - name: Test
+        working-directory: tests/build
+        run: ctest --output-on-failure
+
   build-teensy:
     runs-on: ubuntu-latest
     steps:
