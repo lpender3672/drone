@@ -101,9 +101,10 @@ private:
     TController*  controller_ = nullptr;
 };
 
-// Default instantiation for embedded targets — bare measurement types and
-// shared::NavigationState. Sim instantiates the template explicitly with
-// its sim-side wrappers (see sim/src/quadcopter/system.hpp).
+// Default instantiation used by both sim and embedded — bare measurement
+// types and shared::NavigationState. Sim wraps it inside a QuadrotorPlant
+// (sim/src/quadcopter/plant.hpp) that adds dynamics + sensors; embedded
+// constructs it directly (ekf-teensy/src/main.cpp).
 using QuadrotorVehicle = QuadrotorVehicleT<>;
 
 } // namespace shared

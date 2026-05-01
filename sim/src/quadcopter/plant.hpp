@@ -16,16 +16,13 @@ namespace sim {
 namespace quadcopter {
 
 /**
- * Sim-side wrapper around a shared `QuadrotorVehicle`. The vehicle owns
- * the EKF + altitude-hold + attitude controller; the system additionally
- * owns sensors and dynamics for closed-loop simulation. Embedded targets
- * use the bare `shared::QuadrotorVehicle` directly — no system wrapper.
+ * Sim-only "plant": the closed-loop system the controller is closing the
+ * loop on. Owns a shared::QuadrotorVehicle (sensors-EKF-controller chain
+ * that runs on both targets) plus the sim-only dynamics + sensor blocks
+ * + disturbance-injection ports needed for closed-loop simulation.
  *
- * This is the precursor to the planned `QuadrotorPlant` rename — same
- * shape, just a more accurate name.
- *
- * Disturbance inputs are forwarded so test harnesses can inject forces
- * and torques without knowing the internal structure.
+ * Embedded targets construct shared::QuadrotorVehicle directly — there
+ * is no Plant on hardware; the real world plays that role.
  */
 template<
     typename ImuT  = ImuSensor<TrueState>,
@@ -33,7 +30,7 @@ template<
     typename BaroT = BaroSensor<TrueState>,
     typename MagT  = MagSensor<TrueState>
 >
-class QuadrotorSystemT : public CompositeBlock {
+class QuadrotorPlantT : public CompositeBlock {
 public:
     // Sim uses the default vehicle specialization — same type universe as
     // embedded. Per-vehicle state extensions (fixed-wing airspeed/sideslip,
@@ -41,7 +38,7 @@ public:
     // and re-instantiate this template; quadrotor doesn't need any.
     using Vehicle = shared::QuadrotorVehicle;
 
-    QuadrotorSystemT(
+    QuadrotorPlantT(
         const std::string&                    name,
         std::unique_ptr<ImuT>                 imu,
         std::unique_ptr<GnssT>                gnss,
@@ -137,7 +134,7 @@ private:
 };
 
 // Convenience alias for the standard simulation-sensor configuration.
-using QuadrotorSystem = QuadrotorSystemT<>;
+using QuadrotorPlant = QuadrotorPlantT<>;
 
 } // namespace quadcopter
 } // namespace sim
