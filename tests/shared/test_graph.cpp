@@ -447,6 +447,8 @@ public:
 
         graph().connect(*a, a->out(), *b, b->in());
         graph().connect(*b, b->out(), *c, c->in());
+
+        freeze();
     }
 };
 
@@ -463,4 +465,144 @@ TEST(CompositeBlock, GraphBackedTicksInTopoOrder) {
     EXPECT_EQ(comp.a->update_count, 1);
     EXPECT_EQ(comp.b->update_count, 1);
     EXPECT_EQ(comp.c->update_count, 1);
+}
+
+// ============================================================================
+// Slice 7 (cache topo_order): version counter + CompositeBlock cache.
+// ============================================================================
+
+TEST(Graph, VersionStartsAtZero) {
+    Graph g;
+    EXPECT_EQ(g.version(), 0u);
+}
+
+TEST(Graph, VersionIncrementsOnAddBlock) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    EXPECT_EQ(g.version(), 1u);
+
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+    EXPECT_EQ(g.version(), 2u);
+}
+
+TEST(Graph, VersionIncrementsOnTypedConnect) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    const auto v_before = g.version();
+
+    g.connect(*a, a->out(), *b, b->in());
+
+    EXPECT_EQ(g.version(), v_before + 1);
+}
+
+TEST(Graph, VersionIncrementsOnStringConnect) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+    const auto v_before = g.version();
+
+    g.connect("a.out", "b.in");
+
+    EXPECT_EQ(g.version(), v_before + 1);
+}
+
+TEST(Graph, VersionUnchangedByReadOnlyAccess) {
+    Graph g;
+    g.add_block(std::make_unique<MockBlock<>>("a"));
+    g.add_block(std::make_unique<MockBlock<>>("b"));
+    g.connect("a.out", "b.in");
+
+    const auto v = g.version();
+
+    // None of these mutate the graph; version must not move.
+    (void)g.find("a");
+    (void)g.block_count();
+    (void)g.edge_count();
+    (void)g.blocks();
+    (void)g.edges();
+    (void)g.outgoing(g.find("a"));
+    (void)g.incoming(g.find("b"));
+    (void)g.topo_order();
+
+    EXPECT_EQ(g.version(), v);
+}
+
+// Caching: ticking the same composite many times should not change the
+// outputs (graph hasn't mutated; cache holds). Adding a child after the
+// first tick must invalidate.
+namespace {
+
+class CacheableComposite : public shared::CompositeBlock {
+public:
+    MockBlock<int>* a = nullptr;
+    MockBlock<int>* b = nullptr;
+    MockBlock<int>* c = nullptr;
+
+    CacheableComposite() : CompositeBlock("comp") {
+        a = add_child(std::make_unique<MockBlock<int>>("a"));
+        b = add_child(std::make_unique<MockBlock<int>>("b"));
+        graph().connect(*a, a->out(), *b, b->in());
+        freeze();
+    }
+};
+
+} // namespace
+
+TEST(CompositeBlock, CachedOrderProducesConsistentTicks) {
+    CacheableComposite comp;
+    comp.a->in().set(5);
+
+    // Tick many times. With the cache populated on first tick, no graph
+    // mutation, no need to recompute. Behaviour must be stable.
+    for (int i = 0; i < 100; ++i) comp.update(static_cast<uint64_t>(i));
+
+    EXPECT_EQ(comp.a->update_count, 100);
+    EXPECT_EQ(comp.b->update_count, 100);
+    EXPECT_EQ(comp.b->out().get(), 5);
+}
+
+TEST(CompositeBlock, UpdateAbortsBeforeFreeze) {
+    // A composite that did *not* call freeze() in its ctor must abort —
+    // safety contract: update() never recomputes topology.
+    class Unfrozen : public shared::CompositeBlock {
+    public:
+        Unfrozen() : CompositeBlock("u") {
+            (void)add_child(std::make_unique<MockBlock<int>>("only"));
+            // No freeze() call.
+        }
+    };
+
+    Unfrozen u;
+    EXPECT_THROW(u.update(0), std::runtime_error);
+}
+
+TEST(CompositeBlock, UpdateAbortsAfterPostFreezeMutation) {
+    CacheableComposite comp;
+    comp.update(0);  // first tick is fine — cache populated by freeze() in ctor
+
+    // Mutate the graph *without* re-freezing.
+    comp.c = comp.graph().add_block(std::make_unique<MockBlock<int>>("c"));
+
+    // Next update detects the version mismatch and aborts. No silent
+    // recompute, no half-tick where some children were ticked and others
+    // weren't.
+    EXPECT_THROW(comp.update(1), std::runtime_error);
+}
+
+TEST(CompositeBlock, ReFreezeAfterMutationLetsUpdateProceed) {
+    CacheableComposite comp;
+    comp.a->in().set(11);
+    comp.update(0);
+    EXPECT_EQ(comp.b->out().get(), 11);
+
+    // Add a third block, wire it, and re-freeze. Now the new topology is
+    // committed and update() will tick the full chain.
+    comp.c = comp.graph().add_block(std::make_unique<MockBlock<int>>("c"));
+    comp.graph().connect(*comp.b, comp.b->out(), *comp.c, comp.c->in());
+    comp.freeze();
+
+    comp.update(1);
+    EXPECT_EQ(comp.c->update_count, 1);
+    EXPECT_EQ(comp.c->out().get(), 11);
 }

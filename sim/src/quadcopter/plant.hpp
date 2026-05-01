@@ -92,6 +92,11 @@ public:
 
         // Vehicle's motor commands drive the dynamics.
         connect(vehicle_->motor_output(), dynamics_->input());
+
+        // Plant's own composite topology is fixed once all children/edges
+        // above are in place. (Vehicle freezes its own internal graph in
+        // its ctor.)
+        freeze();
     }
 
     /**

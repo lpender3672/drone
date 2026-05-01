@@ -108,7 +108,7 @@ public:
                 break;
         }
 
-        output_.value = Scalar(value, current_time_us);
+        output_.value = Scalar(value);
         return true;
     }
 

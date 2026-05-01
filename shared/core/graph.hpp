@@ -58,6 +58,7 @@ public:
         }
         T* raw = b.get();
         blocks_.push_back(std::move(b));
+        ++version_;
         return raw;
     }
 
@@ -84,6 +85,7 @@ public:
         edges_.push_back(Edge{&src, out.name, &dst, in.name});
         outgoing_index_.emplace(&src, idx);
         incoming_index_.emplace(&dst, idx);
+        ++version_;
     }
 
     // String-keyed connect for graph specs. Path format is "block_name.port_name".
@@ -131,6 +133,7 @@ public:
                               std::string(dst_port_name)});
         outgoing_index_.emplace(src, idx);
         incoming_index_.emplace(dst, idx);
+        ++version_;
     }
 
     std::vector<Edge> outgoing(const Block* src) const {
@@ -219,6 +222,12 @@ public:
     std::size_t block_count() const { return blocks_.size(); }
     std::size_t edge_count()  const { return edges_.size(); }
 
+    // Monotonic counter incremented on every mutation (add_block, connect).
+    // Lets external observers (CompositeBlock's topo cache, future signal-
+    // tracer subscriptions) detect when their cached view is stale without
+    // re-running the full topo each tick. Read-only operations don't bump it.
+    std::size_t version() const { return version_; }
+
     const std::vector<Edge>&                   edges()  const { return edges_; }
     const std::vector<std::unique_ptr<Block>>& blocks() const { return blocks_; }
 
@@ -244,25 +253,51 @@ private:
     std::vector<Edge>                                   edges_;
     std::unordered_multimap<const Block*, std::size_t>  outgoing_index_;
     std::unordered_multimap<const Block*, std::size_t>  incoming_index_;
+    std::size_t                                         version_ = 0;
 };
 
-// A block that owns and schedules a set of child blocks. Calling update()
-// ticks children in topological order — a child runs only after every
-// block whose output it consumes (provided edges were registered via
-// graph().connect()). Subclasses that wire children with the *free*
-// connect(out, in) don't register graph edges, so topo_order falls back
-// to insertion order — identical to the pre-Tier-2 behaviour.
+// A block that owns and schedules a set of child blocks.
+//
+// **Safety contract:** the topology is frozen before any tick. Subclass
+// constructors must call `freeze()` after they're done adding children
+// and registering edges (or after the wiring has been loaded). `update()`
+// then walks a pre-computed `cached_order_` with zero allocation. This is
+// what makes the runtime safe to use on the embedded hot path.
+//
+// `update()` aborts if:
+//   - freeze() was never called (subclass forgot it);
+//   - the graph was mutated after freeze() without a re-freeze (caller
+//     bumped Graph::version() via add_block/connect post-freeze).
+//
+// A graph misconfig at runtime is always a programmer error — the abort is
+// the right behaviour: better than silently recomputing inside the tick.
 class CompositeBlock : public Block {
 public:
     explicit CompositeBlock(const std::string& name, uint32_t update_period_us = 0)
         : Block(name, update_period_us) {}
 
+    // Build the topological execution order for the current graph state.
+    // Must be called by the subclass ctor (or by user setup code) after
+    // all children/edges have been added, and before the first update().
+    // Calling freeze() again is fine — it refreshes the cache; useful when
+    // graph mutations are explicitly batched between ticks.
+    void freeze() {
+        cached_order_   = graph_.topo_order();    // throws on cycle: cache untouched
+        cached_version_ = graph_.version();
+    }
+
     bool update(uint64_t t) override {
-        // Re-topo each tick. On a small vehicle (~3-10 children) this is
-        // microseconds and avoids a stale-cache trap when subclasses add
-        // edges after children. Slice 5+ can cache + invalidate if profiling
-        // shows it matters.
-        for (auto* child : graph_.topo_order()) {
+        if (cached_version_ == kInvalidVersion) {
+            detail::runtime_error(
+                "CompositeBlock::update: graph not frozen — call freeze() "
+                "after construction (block '" + name() + "')");
+        }
+        if (cached_version_ != graph_.version()) {
+            detail::runtime_error(
+                "CompositeBlock::update: graph mutated after freeze() — "
+                "call freeze() again (block '" + name() + "')");
+        }
+        for (auto* child : cached_order_) {
             if (child->is_due(t)) child->update(t);
         }
         mark_updated(t);
@@ -281,7 +316,11 @@ protected:
     }
 
 private:
-    Graph graph_;
+    static constexpr std::size_t kInvalidVersion = static_cast<std::size_t>(-1);
+
+    Graph                graph_;
+    std::vector<Block*>  cached_order_;
+    std::size_t          cached_version_ = kInvalidVersion;
 };
 
 } // namespace shared

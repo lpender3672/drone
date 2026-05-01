@@ -3,7 +3,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <functional>
 #include <memory>
 #include "interblock_data.hpp"
 #include "misuse.hpp"
@@ -134,9 +133,6 @@ void connect(OutputPort<T>& out, InputPort<T>& in) {
 
 class Block {
 public:
-    using OutputCallback =
-        std::function<void(const std::string&, const IInterBlockData&)>;
-
     // update_period_us = 0 → always due
     explicit Block(const std::string& name,
                    uint32_t update_period_us = 0)
@@ -177,14 +173,6 @@ public:
         return get_dt_us(current_time_us) >= update_period_us_;
     }
 
-    void add_output_callback(OutputCallback cb) {
-        output_callbacks_.push_back(std::move(cb));
-    }
-
-    void clear_callbacks() {
-        output_callbacks_.clear();
-    }
-
     // Look up a registered port by its declared name (e.g. "in", "out",
     // "imu", "gnss"). Returns nullptr if not registered. Used by
     // graph-driven wiring where the wiring site doesn't know T.
@@ -196,12 +184,6 @@ public:
     }
 
 protected:
-    void notify_output(const IInterBlockData& data) {
-        for (auto& cb : output_callbacks_) {
-            cb(name_, data);
-        }
-    }
-
     void mark_updated(uint64_t current_time_us) {
         last_update_time_us_ = current_time_us;
         has_updated_ = true;
@@ -220,8 +202,7 @@ protected:
     uint64_t last_update_time_us_;
     bool has_updated_;
 
-    std::vector<OutputCallback> output_callbacks_;
-    std::vector<IPort*>         ports_;
+    std::vector<IPort*> ports_;
 };
 
 template<typename TIn, typename TOut>

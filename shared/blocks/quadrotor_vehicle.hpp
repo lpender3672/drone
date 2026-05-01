@@ -67,6 +67,12 @@ public:
         connect(alt_hold_->output(), controller_->thrust_input());
 
         ekf_->set_origin(origin_);
+
+        // Freeze the topology so update() can tick from cached order with
+        // zero allocation. (We use the *free* connect() above, which doesn't
+        // bump Graph::version, so topo falls back to insertion order — same
+        // tick order as pre-Tier-2.)
+        freeze();
     }
 
     /**
