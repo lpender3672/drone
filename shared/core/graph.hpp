@@ -31,6 +31,12 @@ public:
     Graph() = default;
     Graph(const Graph&)            = delete;
     Graph& operator=(const Graph&) = delete;
+    // Move ctor/assign aren't auto-declared once copy ctor is `= delete`,
+    // but they're safe — vector + unordered_multimap members are movable
+    // and pointer identity is preserved (unique_ptrs move ownership without
+    // touching the heap object).
+    Graph(Graph&&)            = default;
+    Graph& operator=(Graph&&) = default;
 
     // Take ownership of `b` and register it under its declared name. Returns
     // a non-owning typed pointer the caller can use for wiring. Throws
@@ -39,8 +45,16 @@ public:
     // so duplicates are a misconfig, not a soft-fail.
     template<typename T>
     T* add_block(std::unique_ptr<T> b) {
-        if (find(b->name()) != nullptr) {
-            throw std::invalid_argument("Graph::add_block: duplicate name '" + b->name() + "'");
+        // Upcast to Block* before calling name(): T may multi-inherit
+        // (e.g. SensorBlock combines TypedBlock with sensors::Sensor<>,
+        // both of which expose a `name()` method with different signatures
+        // — direct `b->name()` would be ambiguous). The upcast itself is
+        // unambiguous because only one Block lives in any block subclass's
+        // hierarchy.
+        Block* as_block = b.get();
+        if (find(as_block->name()) != nullptr) {
+            throw std::invalid_argument(
+                "Graph::add_block: duplicate name '" + as_block->name() + "'");
         }
         T* raw = b.get();
         blocks_.push_back(std::move(b));
@@ -137,6 +151,57 @@ public:
         return in;
     }
 
+    // Topologically order the blocks so each block appears AFTER all its
+    // data sources. Tiebreak by insertion order — multiple valid orders
+    // exist when blocks aren't connected; the earliest-inserted block
+    // wins. Throws std::runtime_error on cycles. (Algebraic loops require
+    // an explicit unit-delay block on the back-edge — slice 5.)
+    std::vector<Block*> topo_order() const {
+        std::vector<Block*> all;
+        all.reserve(blocks_.size());
+        for (const auto& b : blocks_) all.push_back(b.get());
+
+        // Per-block remaining in-degree; mutated as we consume nodes.
+        std::unordered_map<const Block*, int> remaining_in;
+        for (auto* b : all) remaining_in[b] = 0;
+        for (const auto& e : edges_) remaining_in[e.dst_block]++;
+
+        std::vector<Block*> result;
+        result.reserve(all.size());
+        std::vector<bool> consumed(all.size(), false);
+
+        while (result.size() < all.size()) {
+            // Find the earliest-inserted block whose dependencies have all
+            // been visited. Re-scanning from the start each iteration is
+            // what gives us the deterministic insertion-order tiebreak.
+            bool progress = false;
+            for (std::size_t i = 0; i < all.size(); ++i) {
+                if (consumed[i]) continue;
+                if (remaining_in[all[i]] != 0) continue;
+
+                Block* picked = all[i];
+                result.push_back(picked);
+                consumed[i] = true;
+
+                // Unlock successors by decrementing their in-degree.
+                auto range = outgoing_index_.equal_range(picked);
+                for (auto it = range.first; it != range.second; ++it) {
+                    Block* successor = edges_[it->second].dst_block;
+                    remaining_in[successor]--;
+                }
+                progress = true;
+                break;
+            }
+            if (!progress) {
+                throw std::runtime_error(
+                    "Graph::topo_order: cycle detected (visited " +
+                    std::to_string(result.size()) + " of " +
+                    std::to_string(all.size()) + " blocks)");
+            }
+        }
+        return result;
+    }
+
     std::size_t block_count() const { return blocks_.size(); }
     std::size_t edge_count()  const { return edges_.size(); }
 
@@ -165,6 +230,44 @@ private:
     std::vector<Edge>                                   edges_;
     std::unordered_multimap<const Block*, std::size_t>  outgoing_index_;
     std::unordered_multimap<const Block*, std::size_t>  incoming_index_;
+};
+
+// A block that owns and schedules a set of child blocks. Calling update()
+// ticks children in topological order — a child runs only after every
+// block whose output it consumes (provided edges were registered via
+// graph().connect()). Subclasses that wire children with the *free*
+// connect(out, in) don't register graph edges, so topo_order falls back
+// to insertion order — identical to the pre-Tier-2 behaviour.
+class CompositeBlock : public Block {
+public:
+    explicit CompositeBlock(const std::string& name, uint32_t update_period_us = 0)
+        : Block(name, update_period_us) {}
+
+    bool update(uint64_t t) override {
+        // Re-topo each tick. On a small vehicle (~3-10 children) this is
+        // microseconds and avoids a stale-cache trap when subclasses add
+        // edges after children. Slice 5+ can cache + invalidate if profiling
+        // shows it matters.
+        for (auto* child : graph_.topo_order()) {
+            if (child->is_due(t)) child->update(t);
+        }
+        mark_updated(t);
+        return true;
+    }
+
+    // Subclasses can register edges (graph().connect(...)) so topo_order
+    // respects data-flow ordering. Const overload for read-only introspection.
+    Graph&       graph()       { return graph_; }
+    const Graph& graph() const { return graph_; }
+
+protected:
+    template<typename T>
+    T* add_child(std::unique_ptr<T> block) {
+        return graph_.add_block(std::move(block));
+    }
+
+private:
+    Graph graph_;
 };
 
 } // namespace shared

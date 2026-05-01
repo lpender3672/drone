@@ -249,31 +249,9 @@ protected:
     OutputPort<TOut> output_;
 };
 
-// A block that owns and schedules a set of child blocks.
-// Calling update() on a CompositeBlock ticks each child that is due.
-// Children are updated in the order they were added via add_child().
-class CompositeBlock : public Block {
-public:
-    explicit CompositeBlock(const std::string& name, uint32_t update_period_us = 0)
-        : Block(name, update_period_us) {}
-
-    bool update(uint64_t t) override {
-        for (auto& child : children_)
-            if (child->is_due(t)) child->update(t);
-        mark_updated(t);
-        return true;
-    }
-
-protected:
-    template<typename T>
-    T* add_child(std::unique_ptr<T> block) {
-        T* ptr = block.get();
-        children_.push_back(std::move(block));
-        return ptr;
-    }
-
-private:
-    std::vector<std::unique_ptr<Block>> children_;
-};
-
 } // namespace shared
+
+// CompositeBlock has moved to graph.hpp because it now holds a Graph
+// member. Including graph.hpp here keeps backward compat — code that
+// said `#include "core/block.hpp"` still gets CompositeBlock.
+#include "graph.hpp"

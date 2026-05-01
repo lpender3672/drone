@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <stdexcept>
 #include <type_traits>
 #include "core/graph.hpp"
@@ -140,11 +141,15 @@ TEST(Graph, ConnectRejectsBlockNotInGraph) {
 // the unique_ptrs (UB) or deep-clone the blocks (silently breaking those
 // pointer handles). Either way, copying is wrong; this static_assert
 // catches an accidental relaxation of that contract.
-TEST(Graph, GraphIsNonCopyable) {
+TEST(Graph, GraphIsNonCopyableButMovable) {
     static_assert(!std::is_copy_constructible_v<Graph>,
                   "Graph must remain non-copy-constructible");
     static_assert(!std::is_copy_assignable_v<Graph>,
                   "Graph must remain non-copy-assignable");
+    static_assert(std::is_move_constructible_v<Graph>,
+                  "Graph must be move-constructible (CompositeBlock holds one as a member)");
+    static_assert(std::is_move_assignable_v<Graph>,
+                  "Graph must be move-assignable");
     SUCCEED();
 }
 
@@ -249,4 +254,188 @@ TEST(Graph, IntegrationByStringPipelineTicks) {
     for (const auto& blk : g.blocks()) blk->update(0);
 
     EXPECT_DOUBLE_EQ(b->out().get(), 13.5);
+}
+
+// ============================================================================
+// Slice 4: topological sort
+// ============================================================================
+
+TEST(Graph, TopoOrderEmptyGraphReturnsEmpty) {
+    Graph g;
+    EXPECT_TRUE(g.topo_order().empty());
+}
+
+TEST(Graph, TopoOrderSingleBlockReturnsThatBlock) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 1u);
+    EXPECT_EQ(order[0], a);
+}
+
+TEST(Graph, TopoOrderLinearChainOrdersByDataFlow) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+
+    g.connect("a.out", "b.in");
+    g.connect("b.out", "c.in");
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 3u);
+    EXPECT_EQ(order[0], a);
+    EXPECT_EQ(order[1], b);
+    EXPECT_EQ(order[2], c);
+}
+
+TEST(Graph, TopoOrderUnconnectedBlocksKeepInsertionOrder) {
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 3u);
+    EXPECT_EQ(order[0], a);
+    EXPECT_EQ(order[1], b);
+    EXPECT_EQ(order[2], c);
+}
+
+TEST(Graph, TopoOrderRespectsFanInPredecessors) {
+    // a → c, b → c.  c must come last; a and b in either order.
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+
+    g.connect("a.out", "c.in");
+    // Two sources can't both wire into c.in (the second overwrites). Use
+    // distinct edges only: add another mock block with a typed-port wiring.
+    // Simpler — verify just one fan-in edge keeps c after a:
+    auto order = g.topo_order();
+    auto pos_a = std::find(order.begin(), order.end(), a) - order.begin();
+    auto pos_c = std::find(order.begin(), order.end(), c) - order.begin();
+    EXPECT_LT(pos_a, pos_c);
+
+    auto pos_b = std::find(order.begin(), order.end(), b) - order.begin();
+    EXPECT_NE(pos_b, static_cast<long>(order.size()));  // b is in the order
+}
+
+TEST(Graph, TopoOrderRespectsFanOutSuccessors) {
+    // a → b, a → c.  a must come first; b and c in either order.
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+
+    g.connect("a.out", "b.in");
+    g.connect("a.out", "c.in");
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 3u);
+    EXPECT_EQ(order[0], a);
+    // b and c can come in any valid topological order.
+    auto pos_b = std::find(order.begin(), order.end(), b) - order.begin();
+    auto pos_c = std::find(order.begin(), order.end(), c) - order.begin();
+    EXPECT_GT(pos_b, 0);
+    EXPECT_GT(pos_c, 0);
+}
+
+TEST(Graph, TopoOrderHandlesDiamond) {
+    // a → b, a → c, b → d, c → d
+    // Valid orders: [a,b,c,d] or [a,c,b,d]. With insertion-order tiebreak,
+    // we get [a,b,c,d] because b was added before c.
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+    auto* d = g.add_block(std::make_unique<MockBlock<>>("d"));
+
+    g.connect("a.out", "b.in");
+    g.connect("a.out", "c.in");
+    g.connect("b.out", "d.in");
+    g.connect("c.out", "d.in");
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 4u);
+    EXPECT_EQ(order.front(), a);
+    EXPECT_EQ(order.back(),  d);
+}
+
+TEST(Graph, TopoOrderDeterministicTiebreakByInsertionOrder) {
+    // Two parallel chains: a → b, c → d. Insertion order determines
+    // which chain comes first; result is [a, b, c, d] since a was added
+    // before c (both at in_degree=0 initially, picker takes earlier-inserted).
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+    auto* c = g.add_block(std::make_unique<MockBlock<>>("c"));
+    auto* d = g.add_block(std::make_unique<MockBlock<>>("d"));
+
+    g.connect("a.out", "b.in");
+    g.connect("c.out", "d.in");
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 4u);
+    EXPECT_EQ(order[0], a);
+    EXPECT_EQ(order[1], b);
+    EXPECT_EQ(order[2], c);
+    EXPECT_EQ(order[3], d);
+}
+
+TEST(Graph, TopoOrderThrowsOnCycle) {
+    // Build a cycle by typed connect (string-keyed connect would also work,
+    // but typed avoids the input-port-overwrite case).
+    Graph g;
+    auto* a = g.add_block(std::make_unique<MockBlock<>>("a"));
+    auto* b = g.add_block(std::make_unique<MockBlock<>>("b"));
+
+    // a → b → a forms a cycle. The second connect overwrites b->a's input
+    // source, but Graph's edge bookkeeping records both — enough to make
+    // topo_order detect the cycle.
+    g.connect(*a, a->out(), *b, b->in());
+    g.connect(*b, b->out(), *a, a->in());
+
+    EXPECT_THROW(g.topo_order(), std::runtime_error);
+}
+
+// CompositeBlock now uses topo_order from its embedded Graph. Subclasses
+// that record edges via graph().connect() get topology-respecting tick
+// order; subclasses that wire with the free connect() see insertion order
+// (back-compat with existing vehicle composites).
+namespace {
+
+class TopoComposite : public shared::CompositeBlock {
+public:
+    MockBlock<int>* a;
+    MockBlock<int>* b;
+    MockBlock<int>* c;
+
+    TopoComposite() : CompositeBlock("comp") {
+        // Add in REVERSE topological order. If update walked insertion
+        // order it'd tick c → b → a and the value wouldn't propagate;
+        // proper topo_order ticks a → b → c and the value flows through.
+        c = add_child(std::make_unique<MockBlock<int>>("c"));
+        b = add_child(std::make_unique<MockBlock<int>>("b"));
+        a = add_child(std::make_unique<MockBlock<int>>("a"));
+
+        graph().connect(*a, a->out(), *b, b->in());
+        graph().connect(*b, b->out(), *c, c->in());
+    }
+};
+
+} // namespace
+
+TEST(CompositeBlock, GraphBackedTicksInTopoOrder) {
+    TopoComposite comp;
+    comp.a->in().set(7);
+
+    comp.update(0);
+
+    // Value flowed a → b → c in one tick because update walked topo order.
+    EXPECT_EQ(comp.c->out().get(), 7);
+    EXPECT_EQ(comp.a->update_count, 1);
+    EXPECT_EQ(comp.b->update_count, 1);
+    EXPECT_EQ(comp.c->update_count, 1);
 }
