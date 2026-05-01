@@ -154,17 +154,27 @@ public:
     // Topologically order the blocks so each block appears AFTER all its
     // data sources. Tiebreak by insertion order — multiple valid orders
     // exist when blocks aren't connected; the earliest-inserted block
-    // wins. Throws std::runtime_error on cycles. (Algebraic loops require
-    // an explicit unit-delay block on the back-edge — slice 5.)
+    // wins. Throws std::runtime_error on cycles that aren't broken by a
+    // unit-delay block.
+    //
+    // Edges that terminate at a `is_delay()` block don't constrain the
+    // order — the delay decouples its input from its output (input is
+    // latched for next tick), so the cycle is broken at the delay's
+    // input. Algebraic loops *not* broken by a delay still throw.
     std::vector<Block*> topo_order() const {
         std::vector<Block*> all;
         all.reserve(blocks_.size());
         for (const auto& b : blocks_) all.push_back(b.get());
 
         // Per-block remaining in-degree; mutated as we consume nodes.
+        // Edges into delay blocks are excluded entirely (they don't
+        // constrain ordering — see comment above).
         std::unordered_map<const Block*, int> remaining_in;
         for (auto* b : all) remaining_in[b] = 0;
-        for (const auto& e : edges_) remaining_in[e.dst_block]++;
+        for (const auto& e : edges_) {
+            if (e.dst_block->is_delay()) continue;
+            remaining_in[e.dst_block]++;
+        }
 
         std::vector<Block*> result;
         result.reserve(all.size());
@@ -183,10 +193,13 @@ public:
                 result.push_back(picked);
                 consumed[i] = true;
 
-                // Unlock successors by decrementing their in-degree.
+                // Unlock successors by decrementing their in-degree —
+                // skipping the delay-terminated edges that we never
+                // counted in the first place.
                 auto range = outgoing_index_.equal_range(picked);
                 for (auto it = range.first; it != range.second; ++it) {
                     Block* successor = edges_[it->second].dst_block;
+                    if (successor->is_delay()) continue;
                     remaining_in[successor]--;
                 }
                 progress = true;
@@ -194,7 +207,8 @@ public:
             }
             if (!progress) {
                 throw std::runtime_error(
-                    "Graph::topo_order: cycle detected (visited " +
+                    "Graph::topo_order: cycle detected without a unit-delay "
+                    "on the back-edge (visited " +
                     std::to_string(result.size()) + " of " +
                     std::to_string(all.size()) + " blocks)");
             }

@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include "core/graph.hpp"
+#include "blocks/unit_delay.hpp"
 #include "mocks/mock_block.h"
 
 using shared::Graph;
@@ -398,6 +399,30 @@ TEST(Graph, TopoOrderThrowsOnCycle) {
     g.connect(*b, b->out(), *a, a->in());
 
     EXPECT_THROW(g.topo_order(), std::runtime_error);
+}
+
+TEST(Graph, TopoOrderHandlesCycleBrokenByUnitDelay) {
+    // a → b → delay → a — a real cycle, but the delay decouples its
+    // input from its output, so topo_order should accept it. With the
+    // delay's incoming edge ignored, ordering constraints reduce to
+    // {a → b, delay → a}, giving the order [delay, a, b].
+    Graph g;
+    auto* a     = g.add_block(std::make_unique<MockBlock<int>>("a"));
+    auto* b     = g.add_block(std::make_unique<MockBlock<int>>("b"));
+    auto* delay = g.add_block(std::make_unique<shared::UnitDelayBlock<int>>("d"));
+
+    g.connect("a.out", "b.in");
+    g.connect("b.out", "d.in");
+    g.connect("d.out", "a.in");
+
+    auto order = g.topo_order();
+    ASSERT_EQ(order.size(), 3u);
+
+    auto pos = [&](shared::Block* x) {
+        return std::find(order.begin(), order.end(), x) - order.begin();
+    };
+    EXPECT_LT(pos(delay), pos(a));  // delay → a edge
+    EXPECT_LT(pos(a),     pos(b));  // a → b edge
 }
 
 // CompositeBlock now uses topo_order from its embedded Graph. Subclasses

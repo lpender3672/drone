@@ -134,6 +134,12 @@ public:
     // current_time_us must be monotonic
     virtual bool update(uint64_t current_time_us) = 0;
 
+    // Hook for unit-delay-style blocks: when true, the topological sort
+    // ignores this block's *incoming* edges, breaking algebraic loops.
+    // Default is false; UnitDelayBlock<T> (shared/blocks/unit_delay.hpp)
+    // overrides to true.
+    virtual bool is_delay() const { return false; }
+
     uint64_t get_dt_us(uint64_t current_time_us) const {
         if (!has_updated_) {
             return update_period_us_;
