@@ -2,13 +2,13 @@
 
 #include <cstddef>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "block.hpp"
+#include "misuse.hpp"
 
 namespace shared {
 
@@ -53,7 +53,7 @@ public:
         // hierarchy.
         Block* as_block = b.get();
         if (find(as_block->name()) != nullptr) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "Graph::add_block: duplicate name '" + as_block->name() + "'");
         }
         T* raw = b.get();
@@ -76,7 +76,7 @@ public:
     void connect(Block& src, OutputPort<T>& out,
                  Block& dst, InputPort<T>& in) {
         if (!owns(&src) || !owns(&dst)) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "Graph::connect: block not in graph (call add_block first)");
         }
         ::shared::connect(out, in);
@@ -95,26 +95,26 @@ public:
         const auto [dst_block_name, dst_port_name] = split_path(dst_path);
 
         Block* src = find(src_block_name);
-        if (!src) throw std::invalid_argument(
+        if (!src) detail::invalid_argument(
             std::string("Graph::connect: source block '") +
             std::string(src_block_name) + "' not found");
 
         Block* dst = find(dst_block_name);
-        if (!dst) throw std::invalid_argument(
+        if (!dst) detail::invalid_argument(
             std::string("Graph::connect: destination block '") +
             std::string(dst_block_name) + "' not found");
 
         IPort* src_port = src->port(src_port_name);
-        if (!src_port) throw std::invalid_argument(
+        if (!src_port) detail::invalid_argument(
             std::string("Graph::connect: port '") + std::string(src_port_name) +
             "' not found on block '" + std::string(src_block_name) + "'");
 
         IPort* dst_port = dst->port(dst_port_name);
-        if (!dst_port) throw std::invalid_argument(
+        if (!dst_port) detail::invalid_argument(
             std::string("Graph::connect: port '") + std::string(dst_port_name) +
             "' not found on block '" + std::string(dst_block_name) + "'");
 
-        if (src_port->is_input()) throw std::invalid_argument(
+        if (src_port->is_input()) detail::invalid_argument(
             std::string("Graph::connect: source port '") +
             std::string(src_block_name) + "." + std::string(src_port_name) +
             "' is an input, not an output");
@@ -206,7 +206,7 @@ public:
                 break;
             }
             if (!progress) {
-                throw std::runtime_error(
+                detail::runtime_error(
                     "Graph::topo_order: cycle detected without a unit-delay "
                     "on the back-edge (visited " +
                     std::to_string(result.size()) + " of " +
@@ -233,7 +233,7 @@ private:
     split_path(std::string_view path) {
         const auto dot = path.find('.');
         if (dot == std::string_view::npos) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 std::string("Graph::connect: path '") +
                 std::string(path) + "' missing '.' separator");
         }

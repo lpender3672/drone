@@ -1,12 +1,12 @@
 #pragma once
 
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <functional>
 #include <memory>
 #include "interblock_data.hpp"
+#include "misuse.hpp"
 
 namespace shared {
 
@@ -47,7 +47,7 @@ public:
     // existing typed connect() free function.
     virtual void connect_to(IPort& in_port) {
         (void)in_port;
-        throw std::invalid_argument(
+        detail::invalid_argument(
             "IPort::connect_to: only OutputPort can be a connection source");
     }
 };
@@ -112,11 +112,11 @@ struct OutputPort : public IPort {
     // then perform the typed wiring. Throws on type or direction mismatch.
     void connect_to(IPort& in_port) override {
         if (!in_port.is_input()) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "OutputPort::connect_to: target is not an input port");
         }
         if (in_port.type_id() != type_id()) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "OutputPort::connect_to: type mismatch between source and destination");
         }
         auto& typed_in = static_cast<InputPort<T>&>(in_port);

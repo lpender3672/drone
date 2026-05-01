@@ -3,12 +3,12 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
 #include "block.hpp"
+#include "misuse.hpp"
 
 namespace shared {
 
@@ -51,7 +51,7 @@ class BlockFactory {
 public:
     void register_type(const std::string& type_name, BlockCtor ctor) {
         if (ctors_.find(type_name) != ctors_.end()) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "BlockFactory::register_type: duplicate type '" + type_name + "'");
         }
         ctors_.emplace(type_name, std::move(ctor));
@@ -68,7 +68,7 @@ public:
                                   const BlockParams& params = {}) const {
         const auto it = ctors_.find(type_name);
         if (it == ctors_.end()) {
-            throw std::invalid_argument(
+            detail::invalid_argument(
                 "BlockFactory::create: unknown type '" + type_name + "'");
         }
         return it->second(block_name, params);
