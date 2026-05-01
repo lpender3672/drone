@@ -3,14 +3,28 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <typeindex>
-#include <typeinfo>
 #include <vector>
 #include <functional>
 #include <memory>
 #include "interblock_data.hpp"
 
 namespace shared {
+
+namespace detail {
+
+// Compile-time per-type tag. Each instantiation of `type_tag<T>` has its
+// own static char `marker`, and `&marker` gives a unique address per T —
+// usable as a runtime "type id" via pointer equality. Avoids RTTI so we
+// can build under the embedded toolchain's default `-fno-rtti`.
+template<typename T>
+struct type_tag {
+    static const void* id() {
+        static const char marker = 0;
+        return &marker;
+    }
+};
+
+} // namespace detail
 
 // Type-erased port base. Lets graph-driven wiring (Tier 2) look up ports
 // by string and connect them without knowing T at the wiring site. The
@@ -21,7 +35,10 @@ public:
     virtual ~IPort() = default;
 
     virtual std::string_view port_name() const = 0;
-    virtual std::type_index  type_id()   const = 0;
+    // Type identity for runtime port matching. Compare via pointer
+    // equality: two ports share a type iff their type_id() values are
+    // equal. (Implementations return &detail::type_tag<T>::marker.)
+    virtual const void*      type_id()   const = 0;
     virtual bool             is_input()  const = 0;
 
     // Called on an OUTPUT port to wire it to an input. The default impl
@@ -56,7 +73,7 @@ struct InputPort : public IPort {
     explicit InputPort(const std::string& n) : name(n) {}
 
     std::string_view port_name() const override { return name; }
-    std::type_index  type_id()   const override { return typeid(T); }
+    const void*      type_id()   const override { return detail::type_tag<T>::id(); }
     bool             is_input()  const override { return true; }
 
     // Push a value into a port that has no upstream block (e.g. an external
@@ -85,7 +102,7 @@ struct OutputPort : public IPort {
     explicit OutputPort(const std::string& n) : name(n) {}
 
     std::string_view port_name() const override { return name; }
-    std::type_index  type_id()   const override { return typeid(T); }
+    const void*      type_id()   const override { return detail::type_tag<T>::id(); }
     bool             is_input()  const override { return false; }
 
     void set(const T& v) { value = v; }

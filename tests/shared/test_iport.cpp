@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <typeindex>
 #include "core/block.hpp"
 #include "mocks/mock_block.h"
 
@@ -20,17 +19,22 @@ TEST(IPort, InputPortReportsItsNameThroughBaseInterface) {
     EXPECT_EQ(base->port_name(), "y");
 }
 
-TEST(IPort, OutputPortReportsItsTypeId) {
+TEST(IPort, PortsOfDifferentTypeReportDistinctTypeIds) {
     OutputPort<int>    pi("a");
     OutputPort<double> pd("b");
-    EXPECT_EQ(pi.type_id(), std::type_index(typeid(int)));
     EXPECT_NE(pi.type_id(), pd.type_id());
 }
 
-TEST(IPort, InputPortReportsItsTypeId) {
+TEST(IPort, PortsOfSameTypeShareTypeId) {
     InputPort<int>    pi("a");
     OutputPort<int>   po("b");
-    EXPECT_EQ(pi.type_id(), po.type_id());  // same T → same type_id
+    EXPECT_EQ(pi.type_id(), po.type_id());  // same T → same type_id (pointer equality)
+}
+
+TEST(IPort, TypeIdIsStableAcrossInstances) {
+    InputPort<double>  a("a");
+    InputPort<double>  b("b");
+    EXPECT_EQ(a.type_id(), b.type_id());  // tag is per-T, not per-instance
 }
 
 TEST(IPort, IsInputDistinguishesDirection) {
