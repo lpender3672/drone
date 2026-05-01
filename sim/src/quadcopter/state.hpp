@@ -1,39 +1,19 @@
 #pragma once
 
-#include <cstdint>
-#include <string>
-#include <array>
-#include "../data/state.hpp"
+#include "../../../shared/types/state.h"
 
-// Sim-specific extensions of the shared kinematic states. These add an
-// InterBlockData<> sub-data to the shared TrueState/NavigationState so
-// the sim's logger can introspect them. Embedded code uses the shared
-// types directly and doesn't need these wrappers.
+// Quadrotor-specific state types are just the shared rigid-body kinematic
+// states — quadrotors don't need any state extensions beyond what every
+// flying rigid body has. Future vehicle types (fixed-wing, helicopter, VTOL)
+// that need extra fields (airspeed, sideslip, rotor RPM) will define their
+// own derived state structs in their own vehicle module — this is the slot
+// where that variation belongs, but quadrotor doesn't need it.
 
 namespace sim {
 namespace quadcopter {
 
-class TrueState : public shared::TrueState, public InterBlockData<13> {
-public:
-    TrueState() = default;
-
-    std::string type_name() const override { return "TrueState"; }
-};
-
-class NavigationState : public shared::NavigationState, public InterBlockData<17> {
-public:
-    NavigationState() = default;
-    explicit NavigationState(const shared::TrueState& base) : shared::NavigationState(base) {}
-
-    // Assign just the navigation kinematics from a shared::NavigationState
-    // value, leaving the InterBlockData<17> sub-data (used by the logger)
-    // untouched. Wraps what would otherwise be a slicing static_cast.
-    void assign_nav(const shared::NavigationState& src) {
-        static_cast<shared::NavigationState&>(*this) = src;
-    }
-
-    std::string type_name() const override { return "NavigationState"; }
-};
+using shared::TrueState;
+using shared::NavigationState;
 
 } // namespace quadcopter
 } // namespace sim

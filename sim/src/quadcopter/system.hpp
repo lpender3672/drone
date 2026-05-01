@@ -35,15 +35,11 @@ template<
 >
 class QuadrotorSystemT : public CompositeBlock {
 public:
-    // The vehicle is instantiated with the canonical sensors::*Measurement
-    // input types (same as embedded — sensor data has one type universe).
-    // Only the output state type is sim-specific (adds InterBlockData<>
-    // for the future per-block logger).
-    using Vehicle = shared::QuadrotorVehicleT<
-        QuadrotorEkfBlock,
-        shared::AltitudeHoldBlock<NavigationState>,
-        AttitudePidController
-    >;
+    // Sim uses the default vehicle specialization — same type universe as
+    // embedded. Per-vehicle state extensions (fixed-wing airspeed/sideslip,
+    // helicopter rotor RPM) will eventually live in their own vehicle modules
+    // and re-instantiate this template; quadrotor doesn't need any.
+    using Vehicle = shared::QuadrotorVehicle;
 
     QuadrotorSystemT(
         const std::string&                    name,
