@@ -29,6 +29,20 @@ endif()
 
 include(GoogleTest)
 
+# nlohmann/json — JSON parser used by the graph loader. Single header,
+# header-only, MIT, no transitive deps. Prefer system install if present;
+# FetchContent otherwise.
+find_package(nlohmann_json 3.11 QUIET)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(json)
+endif()
+
 # Warnings.
 add_compile_options(-Wall -Wextra -Wpedantic)
 
@@ -49,7 +63,7 @@ target_include_directories(test_includes INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/../ekf/shared
     ${CMAKE_CURRENT_LIST_DIR}
 )
-target_link_libraries(test_includes INTERFACE Eigen3::Eigen)
+target_link_libraries(test_includes INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
 # Single test binary for fast feedback. If it grows slow, split by domain
 # (shared_tests, sim_tests) — never re-establish a separate runner per

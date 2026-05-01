@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get install -y libeigen3-dev libgtest-dev
+        run: sudo apt-get install -y libeigen3-dev libgtest-dev nlohmann-json3-dev
 
       - name: Configure
         run: cmake -B tests/build -S tests -DCMAKE_BUILD_TYPE=Debug
