@@ -136,6 +136,75 @@ public:
         ++version_;
     }
 
+    // Remove the edge identified by string paths. Both endpoints must
+    // resolve to a recorded edge or this throws (with the graph state
+    // untouched). On success the destination input port's source pointer
+    // is nulled — readers fall back to last-set value semantics.
+    //
+    // Indices are rebuilt after the erase since edge positions in
+    // `edges_` shift; cheap at our scales (graphs of <100 edges).
+    void disconnect(std::string_view src_path, std::string_view dst_path) {
+        const auto [src_block_name, src_port_name] = split_path(src_path);
+        const auto [dst_block_name, dst_port_name] = split_path(dst_path);
+
+        for (std::size_t i = 0; i < edges_.size(); ++i) {
+            const Edge& e = edges_[i];
+            if (e.src_block->name() == src_block_name &&
+                e.src_port            == src_port_name &&
+                e.dst_block->name() == dst_block_name &&
+                e.dst_port            == dst_port_name) {
+                if (IPort* dst_port = e.dst_block->port(e.dst_port)) {
+                    dst_port->disconnect_source();
+                }
+                edges_.erase(edges_.begin() + i);
+                rebuild_edge_indices();
+                ++version_;
+                return;
+            }
+        }
+        detail::invalid_argument(
+            "Graph::disconnect: no edge matching '" + std::string(src_path) +
+            "' → '" + std::string(dst_path) + "'");
+    }
+
+    // Remove a block and every edge incident to it. The block's
+    // unique_ptr is destroyed at this call; any pointer to it the
+    // caller still holds is dangling afterwards. Throws if `block`
+    // isn't owned by the graph (graph state untouched on failure).
+    //
+    // Downstream input ports that read from the removed block's outputs
+    // have their source pointer cleared — otherwise the next tick would
+    // dereference a freed OutputPort.
+    void remove_block(Block* block) {
+        if (!owns(block)) {
+            detail::invalid_argument(
+                "Graph::remove_block: block not in graph");
+        }
+
+        // Drop every edge involving `block`. Walk in reverse so erase
+        // indices stay valid as we go; downstream input ports get their
+        // source pointer cleared first.
+        for (std::size_t i = edges_.size(); i-- > 0; ) {
+            const Edge& e = edges_[i];
+            if (e.src_block == block || e.dst_block == block) {
+                if (IPort* dst_port = e.dst_block->port(e.dst_port)) {
+                    dst_port->disconnect_source();
+                }
+                edges_.erase(edges_.begin() + i);
+            }
+        }
+        rebuild_edge_indices();
+
+        // Now drop the block itself.
+        for (auto it = blocks_.begin(); it != blocks_.end(); ++it) {
+            if (it->get() == block) {
+                blocks_.erase(it);
+                break;
+            }
+        }
+        ++version_;
+    }
+
     std::vector<Edge> outgoing(const Block* src) const {
         std::vector<Edge> out;
         auto range = outgoing_index_.equal_range(src);
@@ -235,6 +304,17 @@ private:
     bool owns(const Block* b) const {
         for (const auto& p : blocks_) if (p.get() == b) return true;
         return false;
+    }
+
+    // Reset both index multimaps from `edges_`. Called after any
+    // operation that shifts edge positions (disconnect / remove_block).
+    void rebuild_edge_indices() {
+        outgoing_index_.clear();
+        incoming_index_.clear();
+        for (std::size_t i = 0; i < edges_.size(); ++i) {
+            outgoing_index_.emplace(edges_[i].src_block, i);
+            incoming_index_.emplace(edges_[i].dst_block, i);
+        }
     }
 
     // Split "block.port" into its two parts. Throws if there's no '.'.

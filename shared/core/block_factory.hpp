@@ -83,7 +83,11 @@ public:
             detail::invalid_argument(
                 "BlockFactory::create: unknown type '" + type_name + "'");
         }
-        return it->second(block_name, params);
+        auto block = it->second(block_name, params);
+        // Stash the factory key on the block so the JSON write-back
+        // path (dump_graph_json) can emit it without a side-table.
+        block->set_type_name(type_name);
+        return block;
     }
 
 private:

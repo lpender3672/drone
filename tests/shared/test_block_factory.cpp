@@ -39,6 +39,21 @@ TEST(BlockFactory, RegisterAddsType) {
     EXPECT_TRUE(f.has_type("mock"));
 }
 
+TEST(BlockFactory, CreateStampsTypeNameOnBlock) {
+    // The factory key is the round-trip identity that dump_graph_json
+    // emits, so each created block must carry it. Direct C++
+    // construction (skipping the factory) leaves type_name empty.
+    BlockFactory f;
+    f.register_type("mock", mock_double_ctor());
+
+    auto block = f.create("mock", "alpha");
+    EXPECT_EQ(block->type_name(), "mock");
+    EXPECT_EQ(block->name(),      "alpha");
+
+    MockBlock<double> direct("direct");
+    EXPECT_EQ(direct.type_name(), "");
+}
+
 TEST(BlockFactory, CreateProducesBlockWithGivenName) {
     BlockFactory f;
     f.register_type("mock", mock_double_ctor());

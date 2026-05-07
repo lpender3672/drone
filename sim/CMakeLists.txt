@@ -56,11 +56,20 @@ target_include_directories(sim_lib INTERFACE
 
 target_link_libraries(sim_lib INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
+# EKF object library: the only non-header sim/shared TU set, compiled
+# once and reused by quad_sim and editor (both instantiate EKF16d via
+# the block factory). Avoids the duplicate-compile + ODR risk that
+# came with sticking the .cpps in each executable's source list.
+add_library(ekf_obj OBJECT
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16.cpp
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
+)
+target_link_libraries(ekf_obj PRIVATE sim_lib)
+
 # Main executable
 add_executable(quad_sim
     src/main.cpp
-    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16.cpp
-    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
+    $<TARGET_OBJECTS:ekf_obj>
 )
 
 target_link_libraries(quad_sim PRIVATE sim_lib)
@@ -76,3 +85,8 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 
 # Tests live in the root-level tests/ tree alongside shared/ tests, not
 # inside sim/. Use `cmake --preset debug -S tests` to configure them.
+
+# Tier 3 editor (ImGui + GLFW + OpenGL). Self-contained subdirectory so
+# the editor's GLFW/OpenGL deps don't leak into the headless quad_sim
+# target (which CI builds without a display).
+add_subdirectory(editor)
