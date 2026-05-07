@@ -76,3 +76,8 @@ message(STATUS "C++ standard: ${CMAKE_CXX_STANDARD}")
 
 # Tests live in the root-level tests/ tree alongside shared/ tests, not
 # inside sim/. Use `cmake --preset debug -S tests` to configure them.
+
+# Tier 3 editor (ImGui + GLFW + OpenGL). Self-contained subdirectory so
+# the editor's GLFW/OpenGL deps don't leak into the headless quad_sim
+# target (which CI builds without a display).
+add_subdirectory(editor)

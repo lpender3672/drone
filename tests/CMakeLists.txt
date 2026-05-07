@@ -66,6 +66,7 @@ target_include_directories(test_includes INTERFACE
     ${CMAKE_CURRENT_LIST_DIR}/../shared
     ${CMAKE_CURRENT_LIST_DIR}/../shared/sensors
     ${CMAKE_CURRENT_LIST_DIR}/../sim/src
+    ${CMAKE_CURRENT_LIST_DIR}/../sim/editor
     ${CMAKE_CURRENT_LIST_DIR}/../ekf/shared
     ${CMAKE_CURRENT_LIST_DIR}
 )
@@ -78,6 +79,7 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/sim/test_*.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shared/test_*.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shared/**/test_*.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/editor/test_*.cpp"
 )
 
 add_executable(drone_tests ${TEST_SOURCES})
