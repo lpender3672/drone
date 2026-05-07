@@ -192,11 +192,18 @@ Carry-over (not blocking Tier 2 closeout):
 ### Tier 3 — Visual editor + codegen (long-term)
 Goal: edit a block diagram in a UI, simulate it, then flash the same graph to the STM32.
 
+The editor is **in-process C++** — links the same `sim_lib` the host sim uses, manipulates a live `shared::Graph` directly, and serialises to JSON only for persistence. No Electron, Tauri, or browser layer; no IPC; no separate JS runtime. Stop-edit-resume is the workflow: pause the tick, mutate the graph, re-`freeze()`, resume.
+
+Frontend stack:
+- **Dear ImGui** (`ocornut/imgui`) — immediate-mode UI host. Pulled via FetchContent.
+- **ImNodes** (`Nelarius/imnodes`) — node-graph canvas extension; one node per block, edges via wired pins. Maps directly onto `shared::Graph` blocks/edges.
+- **ImPlot** (`epezent/implot`) — live signal plotting against the `SignalTracer` output, replacing the offline `plot_impulse.py` workflow for the inner loop.
+
 Work:
-- Electron/Tauri front-end with React Flow (or similar) for the graph editor.
-- Graph spec → YAML persistence.
-- Graph spec → C++ template emission for the embedded target (`step()` function + static block instances). No generic C codegen — emits against the existing block API.
-- Build integration: graph.yaml becomes a CMake input; changes trigger a re-emit.
+- ImGui/ImNodes/ImPlot integration: FetchContent declarations alongside the existing nlohmann/json + Eigen pattern. None of these ship as submodules.
+- Editor app (separate target, e.g. `sim/editor/`) that spawns an ImGui window, lets the user drop blocks from a palette (the `BlockFactory`'s registered types) and wire pins (`Block::port(name)` lookup).
+- Graph ↔ JSON round-trip: write back the in-memory graph as `quad.json`-shaped JSON. Requires the small Tier-3 prep (`Graph::remove_block`, `Graph::disconnect`, factory-type-string on `Block`).
+- Codegen path: graph spec → C++ template emission for the embedded target (`step()` function + static block instances). No generic C codegen — emits against the existing block API. CMake ingests the JSON; changes trigger a re-emit.
 
 ## 8. Risks & Open Questions
 
@@ -226,3 +233,4 @@ Work:
 - **2026-04-26** — Tier 0 confirmed complete. Revised Tier 1: replace "sensor pack trait + factory template" approach with composite block / dependency injection model. A vehicle is a `CompositeBlock` that accepts sensor blocks by injection — no template metaprogramming, direct path to Tier 2 graph-driven wiring. Explicit `connect()` and `CompositeBlock` added as infrastructure prerequisites. Updated FR-1 and architecture section accordingly.
 - **2026-05-01** — Tier 1 closed out. `QuadrotorSystem` split into `shared::QuadrotorVehicle` (cross-target composite) + `sim::QuadrotorPlant` (sim wrapper adding dynamics + sim sensors + disturbance ports). Block runtime + concrete blocks (PID, alt-hold, attitude controller, EKF block) moved into `shared/`; one type universe for sensor and state data; sensors decoupled from observer; embedded `main.cpp` slimmed to use the same vehicle composite. Position-hold removed from scope (altitude-only). Test infrastructure consolidated under root `tests/`, mocks in `tests/mocks/`, 49 unit tests with CI gating. Tier 2 work list refined with concrete first steps (first-class edges + Graph registry as the foundation).
 - **2026-05-07** — Tier 2 closed out. All six work items landed: `Graph` + first-class edges, type-erased `IPort`, `BlockFactory` with concrete sim registrations, `Graph::topo_order()` with `CompositeBlock::freeze()` safety, `UnitDelayBlock<T>` for explicit algebraic-loop resolution, and `SignalTracer` for graph-spec-driven CSV logging. Sim drives end-to-end from `quad.json` (10 blocks + unit-delay, 15 edges, 5 traces); `ekf_compare.json` demonstrates recompile-free observer swap. 143 unit tests across the runtime + loader + tracer. Carry-over noted: alternative observer class, behavioural-parity test, and `Graph::remove_block` + factory-type-on-block as Tier 3 prep.
+- **2026-05-07** — Tier 3 plan revised: in-process **ImGui + ImNodes + ImPlot** editor instead of Electron/Tauri + React Flow. Editor links `sim_lib` directly and mutates the live `shared::Graph`, no IPC. JSON drops from "wire format" to "persistence format only". Empty `sim/imgui` and `sim/implot` submodules removed; the GUI deps will be FetchContent'd alongside Eigen and nlohmann/json when the editor target lands.

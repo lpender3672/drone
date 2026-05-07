@@ -3,6 +3,8 @@
 _deps
 cmake-*
 build
+build_*
+.cache
 .DS_Store
 *.pdf
 cad

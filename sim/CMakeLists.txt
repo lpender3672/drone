@@ -6,10 +6,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find Eigen: prefer system install (CI), fall back to local source tree
+# Find Eigen: prefer system install (CI), fall back to a GitLab clone via
+# FetchContent. The repo also has an `eigen/` submodule used by the
+# embedded targets (ekf/CMakeLists.txt, ekf-teensy/platformio.ini); the
+# host build no longer relies on that path so `git submodule update --init`
+# isn't required just to build sim or tests.
 find_package(Eigen3 3.4 QUIET NO_MODULE)
 if(NOT TARGET Eigen3::Eigen)
-  FetchContent_Declare(eigen SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen)
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3.4.0
+  )
   FetchContent_MakeAvailable(eigen)
 endif()
 
