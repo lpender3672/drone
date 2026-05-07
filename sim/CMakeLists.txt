@@ -6,11 +6,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find Eigen: prefer system install (CI), fall back to local source tree
+# Find Eigen: prefer system install (CI), fall back to a GitLab clone via
+# FetchContent. The repo also has an `eigen/` submodule used by the
+# embedded targets (ekf/CMakeLists.txt, ekf-teensy/platformio.ini); the
+# host build no longer relies on that path so `git submodule update --init`
+# isn't required just to build sim or tests.
 find_package(Eigen3 3.4 QUIET NO_MODULE)
 if(NOT TARGET Eigen3::Eigen)
-  FetchContent_Declare(eigen SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen)
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3.4.0
+  )
   FetchContent_MakeAvailable(eigen)
+endif()
+
+# nlohmann/json — header-only JSON parser used by the Tier 2 graph loader.
+# Prefer a system install; fall back to FetchContent. Same flow as the test
+# build (tests/CMakeLists.txt).
+find_package(nlohmann_json 3.11 QUIET)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(json)
 endif()
 
 # Warnings
@@ -32,7 +54,7 @@ target_include_directories(sim_lib INTERFACE
     ${CMAKE_SOURCE_DIR}/../ekf/shared
 )
 
-target_link_libraries(sim_lib INTERFACE Eigen3::Eigen)
+target_link_libraries(sim_lib INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
 # Main executable
 add_executable(quad_sim

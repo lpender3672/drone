@@ -1,110 +1,119 @@
 #include <iostream>
 #include <iomanip>
 #include <fstream>
-#include <memory>
-#include <cmath>
+#include <sstream>
+#include <string>
 
-// Core
-#include "core/simulation.hpp"
+// Tier 2 graph loader + factory + signal tracer.
+#include "../../shared/core/block_factory.hpp"
+#include "../../shared/core/graph.hpp"
+#include "../../shared/core/graph_loader.hpp"
+#include "../../shared/core/tracer.hpp"
 
-// Vehicle plant (sim-only; embedded uses shared::QuadrotorVehicle directly)
-#include "quadcopter/plant.hpp"
-
-// Test-harness disturbance blocks
+// Block types referenced after load (for runtime config + console readout).
+#include "../../shared/blocks/altitude_hold.hpp"
+#include "../../shared/blocks/attitude_controller.hpp"
+#include "../../shared/blocks/quadrotor_ekf.hpp"
+#include "../../shared/blocks/unit_delay.hpp"
+#include "../../shared/types/state.h"
 #include "blocks/signal_generator.hpp"
-#include "blocks/force_disturbance.hpp"
+#include "quadcopter/dynamics.hpp"
+#include "quadcopter/registrations.hpp"
 
-// EKF params and concrete observer
-#include "sim_ekf_params.h"
-#include "ekf16d.h"
+namespace {
 
-using namespace sim;
-using namespace sim::quadcopter;
+template<typename T>
+T& require_block(const shared::Graph& g, const std::string& name) {
+    shared::Block* b = g.find(name);
+    if (!b) {
+        std::cerr << "fatal: block '" << name << "' not found in graph\n";
+        std::exit(1);
+    }
+    T* typed = dynamic_cast<T*>(b);
+    if (!typed) {
+        std::cerr << "fatal: block '" << name
+                  << "' is not of the expected type\n";
+        std::exit(1);
+    }
+    return *typed;
+}
 
-int main() {
-    std::cout << "=== Quadrotor Closed-Loop Impulse Response ===\n\n";
+std::string read_file(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) {
+        std::cerr << "fatal: cannot open graph spec '" << path << "'\n";
+        std::exit(1);
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
 
-    Simulation sim_runner;  // default 1 ms step
+} // namespace
 
-    // =========================================
-    // Disturbance injection (test infrastructure)
-    // =========================================
-    auto dist_gen    = sim_runner.add_block(std::make_unique<WaveformGenerator>("dist_gen",    WaveformParams{}, 1000));
-    auto dist_torque = sim_runner.add_block(std::make_unique<TorqueDisturbanceBlock>("dist_torque", Vec3(1, 0, 0), 1000));
+int main(int argc, char** argv) {
+    using shared::TrueState;
+    using shared::NavigationState;
+    using shared::Vec3;
+    using shared::Quat;
+    using shared::AttitudeReference;
 
-    // 0.1 N·m roll torque impulse for 10 ms at t = 1 s
-    // I_x = 0.0035 kg·m²  →  Δω ≈ 0.1/0.0035 × 0.01 ≈ 0.29 rad/s roll kick
-    WaveformParams dist_params;
-    dist_params.type         = Waveform::Impulse;
-    dist_params.amplitude    = 0.1;
-    dist_params.start_time_s = 1.0;
-    dist_params.duration_s   = 0.01;
-    dist_gen->set_params(dist_params);
+    const std::string graph_path = (argc > 1) ? argv[1]
+                                              : "configs/quad.json";
 
-    // =========================================
-    // Configure dynamics
-    // =========================================
-    QuadrotorDynamics::Params dyn_params;
-    dyn_params.mass        = 0.5;
-    dyn_params.arm_length  = 0.175;
-    dyn_params.inertia     = Vec3(0.0035, 0.0035, 0.0055);
-    dyn_params.motor.tau       = 0.02;
-    dyn_params.motor.omega_max = 2500.0;
-    dyn_params.propeller.k_t   = 3.27e-7;
-    dyn_params.propeller.k_q   = 4.25e-9;
-    dyn_params.propeller.d     = 1.0;
-    dyn_params.propeller.rho   = 1.225;
+    std::cout << "=== Quadrotor Closed-Loop Sim (graph: "
+              << graph_path << ") ===\n\n";
 
-    // =========================================
-    // Vehicle plant (sensors + vehicle composite + dynamics)
-    // =========================================
-    auto plant = sim_runner.add_block(std::make_unique<QuadrotorPlant>(
-        "quad",
-        std::make_unique<ImuSensor<TrueState>>("imu",   1000,      0),
-        std::make_unique<GpsSensor<TrueState>>("gnss", 100000,  80000),
-        std::make_unique<BaroSensor<TrueState>>("baro",  50000,  20000),
-        std::make_unique<MagSensor<TrueState>>("mag",   20000,      0),
-        std::make_unique<EKF16d>(SIM_DATA_PARAMS),
-        dyn_params
-    ));
+    // --- Build factory + load graph + tracer --------------------------
+    shared::BlockFactory factory;
+    sim::register_quadrotor_blocks(factory);
 
-    connect(dist_gen->output(),    dist_torque->input());
-    connect(dist_torque->output(), plant->disturbance_torque_input());
+    shared::Graph graph;
+    const std::string graph_text = read_file(graph_path);
+    shared::load_graph_json(graph_text, factory, graph);
 
-    // =========================================
-    // Initialize (resets dynamics, EKF, baro ref, alt-hold setpoint)
-    // =========================================
+    shared::SignalTracer tracer;
+    sim::register_quadrotor_traces(tracer);
+    shared::load_traces_json(graph_text, graph, tracer);
+
+    // --- Runtime config (state that isn't graph topology) -------------
     TrueState init;
     init.position         = Vec3(0.0, 0.0, -1.0);
     init.velocity         = Vec3::Zero();
     init.attitude         = Quat::Identity();
     init.angular_velocity = Vec3::Zero();
-    plant->initialize(init);
 
-    plant->ekf().set_gnss_enabled(true);
-    plant->ekf().set_baro_enabled(true);
-    plant->ekf().set_mag_enabled(true);
+    auto& dynamics = require_block<sim::quadcopter::QuadrotorDynamics>(graph, "dynamics");
+    dynamics.reset(init);
 
-    // =========================================
-    // Attitude reference (thrust driven by alt-hold)
-    // =========================================
+    auto& truth_delay = require_block<shared::UnitDelayBlock<TrueState>>(graph, "truth_delay");
+    truth_delay.set_held(init);
+
+    auto& ekf = require_block<shared::QuadrotorEkfBlock>(graph, "ekf");
+    ekf.initialize(init);
+
+    auto& alt_hold = require_block<shared::AltitudeHoldBlock<NavigationState>>(graph, "alt_hold");
+    alt_hold.set_setpoint_m(ekf.origin().alt_m - init.position.z());
+
+    auto& controller = require_block<shared::AttitudePidController>(graph, "att_ctrl");
     AttitudeReference ref;
     ref.set_roll(0.0);
     ref.set_pitch(0.0);
     ref.set_yaw(0.0);
-    plant->controller().reference_input().set(ref);
+    controller.reference_input().set(ref);
 
-    // =========================================
-    // CSV output
-    // =========================================
+    auto order = graph.topo_order();
+
+    // --- CSV output (graph-spec-driven; columns come from "traces") ---
     std::ofstream csv("impulse_response.csv");
-    csv << "t_s,roll_deg,pitch_deg,yaw_deg,roll_rate_dps,pitch_rate_dps,pos_z_m,disturbance_nm,"
-           "ekf_roll_deg,ekf_pitch_deg,ekf_yaw_deg,ekf_pos_z_m\n";
     csv << std::fixed << std::setprecision(6);
+    tracer.write_header(csv);
 
-    // =========================================
-    // Run loop: 2 minutes, 1 ms steps
-    // =========================================
+    // Console-progress fields are still hand-pulled — different format
+    // from the CSV (subsampled, fewer columns, human-readable).
+    auto& dist_gen = require_block<sim::WaveformGenerator>(graph, "dist_gen");
+
+    // --- Run loop: 2 minutes, 1 ms steps ------------------------------
     constexpr uint64_t DT_US  = 1000;
     constexpr uint64_t END_US = 120000000;
 
@@ -113,42 +122,27 @@ int main() {
     std::cout << "-----------------------------------------------------------\n";
 
     for (uint64_t t = 0; t < END_US; t += DT_US) {
-        sim_runner.step();
+        for (auto* b : order) {
+            if (b->is_due(t)) b->update(t);
+        }
 
-        const auto& s      = plant->dynamics().output().get();
-        Vec3 euler         = s.euler_angles();
-        Vec3 omega_dps     = s.angular_velocity * (180.0 / M_PI);
-        double dist_nm     = dist_gen->value();
-
-        const auto& ekf_est = plant->ekf().output().get();
-        Vec3 ekf_euler      = ekf_est.euler_angles();
-
-        csv << (t / 1e6)
-            << "," << (euler.x() * 180.0 / M_PI)
-            << "," << (euler.y() * 180.0 / M_PI)
-            << "," << (euler.z() * 180.0 / M_PI)
-            << "," << omega_dps.x()
-            << "," << omega_dps.y()
-            << "," << s.position.z()
-            << "," << dist_nm
-            << "," << (ekf_euler.x() * 180.0 / M_PI)
-            << "," << (ekf_euler.y() * 180.0 / M_PI)
-            << "," << (ekf_euler.z() * 180.0 / M_PI)
-            << "," << ekf_est.position.z()
-            << "\n";
+        tracer.write_row(csv, t);
 
         if (t % 1000000 == 0) {
+            const auto& s = dynamics.output().get();
+            Vec3 euler    = s.euler_angles();
             std::cout << std::setw(6)  << (t / 1e6)
-                      << "   roll=" << std::setw(7) << (euler.x() * 180.0 / M_PI)
+                      << "   roll="  << std::setw(7) << (euler.x() * 180.0 / M_PI)
                       << " pitch=" << std::setw(7) << (euler.y() * 180.0 / M_PI)
                       << " pos_z=" << std::setw(7) << s.position.z()
-                      << " dist=" << std::setw(6) << dist_nm
+                      << " dist="  << std::setw(6) << dist_gen.value()
                       << "\n";
         }
     }
 
     csv.close();
-    std::cout << "\nWrote impulse_response.csv\n";
+    std::cout << "\nWrote impulse_response.csv ("
+              << tracer.trace_count() << " traces)\n";
 
     return 0;
 }

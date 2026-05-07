@@ -48,6 +48,11 @@ public:
             // and the motor reads through the connection.
             connect(motor_throttles_[i], motors_[i]->input());
         }
+        // The base TypedBlock auto-registers `efforts` (input) and `state`
+        // (output); the disturbance ports are extra and must be registered
+        // explicitly so graph-spec wiring can address them by name.
+        this->register_port(disturbance_input_);
+        this->register_port(disturbance_torque_input_);
     }
 
     const Params& params() const { return params_; }

@@ -40,6 +40,18 @@ public:
     virtual const void*      type_id()   const = 0;
     virtual bool             is_input()  const = 0;
 
+    // Type-erased read of the port's current value. Returns a `const T*`
+    // to the live value for the port's T (cast back via type_id() check).
+    // For an output, this is the port's `value`. For an input, it follows
+    // the same source/value_ logic as `get()` — so reading a wired input
+    // sees through to the upstream output, and an unwired one sees the
+    // last `set()` value.
+    //
+    // Used by the signal-trace logger (shared/core/tracer.hpp) so a
+    // pre-registered (T → serializer) table can dump arbitrary ports
+    // to CSV without knowing T at the trace site.
+    virtual const void* read_erased() const = 0;
+
     // Called on an OUTPUT port to wire it to an input. The default impl
     // throws — only outputs can drive a connection. OutputPort<T>
     // overrides to type-check `in_port` against itself and call the
@@ -74,6 +86,10 @@ struct InputPort : public IPort {
     std::string_view port_name() const override { return name; }
     const void*      type_id()   const override { return detail::type_tag<T>::id(); }
     bool             is_input()  const override { return true; }
+    const void*      read_erased() const override {
+        return source ? static_cast<const void*>(&source->value)
+                      : static_cast<const void*>(&value_);
+    }
 
     // Push a value into a port that has no upstream block (e.g. an external
     // reference input, or a parent composite forwarding into a child).
@@ -103,6 +119,7 @@ struct OutputPort : public IPort {
     std::string_view port_name() const override { return name; }
     const void*      type_id()   const override { return detail::type_tag<T>::id(); }
     bool             is_input()  const override { return false; }
+    const void*      read_erased() const override { return &value; }
 
     void set(const T& v) { value = v; }
     const T& get() const { return value; }

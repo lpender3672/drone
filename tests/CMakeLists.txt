@@ -6,10 +6,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Eigen — prefer system install (CI), fall back to repo's submodule.
+# Eigen — prefer system install (CI), fall back to a GitLab clone via
+# FetchContent. (The embedded targets still use the `eigen/` submodule;
+# the host test build no longer depends on it.)
 find_package(Eigen3 3.4 QUIET NO_MODULE)
 if(NOT TARGET Eigen3::Eigen)
-  FetchContent_Declare(eigen SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../eigen)
+  FetchContent_Declare(
+    eigen
+    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+    GIT_TAG        3.4.0
+  )
   FetchContent_MakeAvailable(eigen)
 endif()
 

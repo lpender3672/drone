@@ -6,6 +6,7 @@
 #include "block_factory.hpp"
 #include "graph.hpp"
 #include "misuse.hpp"
+#include "tracer.hpp"
 
 // Host-only utility: load a graph topology from a JSON document.
 //
@@ -26,7 +27,7 @@
 //     "blocks": [
 //       { "type": "<registered_type_name>",
 //         "name": "<unique_block_name>",
-//         "params": { "<key>": <number>, ... }   // optional; omitted = empty
+//         "params": { "<key>": <number|bool|string>, ... }  // optional
 //       },
 //       ...
 //     ],
@@ -34,12 +35,18 @@
 //       { "from": "<block_name>.<port_name>",
 //         "to":   "<block_name>.<port_name>" },
 //       ...
+//     ],
+//     "traces": [   // optional; populated only by load_traces_json()
+//       { "port": "<block_name>.<port_name>",
+//         "name": "<csv_column_prefix>" },
+//       ...
 //     ]
 //   }
 //
-// Both `blocks` and `edges` are optional — an empty object is a valid
-// (empty) graph. Order in `blocks` becomes insertion order in the graph,
-// which matters for deterministic topo tiebreak.
+// `blocks`, `edges`, and `traces` are each optional — an empty object is
+// a valid (empty) graph with no traces. Order in `blocks` becomes
+// insertion order in the graph (deterministic topo tiebreak); order in
+// `traces` becomes column order in the output CSV.
 
 namespace shared {
 
@@ -86,10 +93,14 @@ inline void load_graph_json(const std::string& json_text,
                 for (auto it = params_node.begin(); it != params_node.end(); ++it) {
                     if (it.value().is_number()) {
                         params.set(it.key(), it.value().get<double>());
+                    } else if (it.value().is_boolean()) {
+                        params.set(it.key(), it.value().get<bool>() ? 1.0 : 0.0);
+                    } else if (it.value().is_string()) {
+                        params.set_string(it.key(), it.value().get<std::string>());
                     } else {
                         detail::invalid_argument(
                             "load_graph_json: param '" + it.key() + "' on block '" +
-                            block_name + "' must be a number (slice 7 supports doubles only)");
+                            block_name + "' must be a number, bool, or string");
                     }
                 }
             }
@@ -115,6 +126,48 @@ inline void load_graph_json(const std::string& json_text,
             graph.connect(edge_spec["from"].get<std::string>(),
                           edge_spec["to"].get<std::string>());
         }
+    }
+}
+
+// Populate `tracer` from the document's `traces` array. The graph must
+// already be loaded — `add_trace` looks ports up by name. Missing
+// `traces` is fine (no-op); a malformed entry throws.
+//
+// The tracer must already have serializers registered for every port
+// type referenced — typically via `register_quadrotor_traces(tracer)`
+// or equivalent before this call.
+inline void load_traces_json(const std::string& json_text,
+                             const Graph&       graph,
+                             SignalTracer&      tracer) {
+    using nlohmann::json;
+
+    json doc;
+    try {
+        doc = json::parse(json_text);
+    } catch (const json::parse_error& e) {
+        detail::invalid_argument(std::string("load_traces_json: malformed JSON: ") + e.what());
+    }
+
+    if (!doc.is_object()) {
+        detail::invalid_argument("load_traces_json: top-level value must be an object");
+    }
+
+    if (!doc.contains("traces")) return;
+
+    const auto& traces_node = doc["traces"];
+    if (!traces_node.is_array()) {
+        detail::invalid_argument("load_traces_json: 'traces' must be an array");
+    }
+    for (const auto& trace_spec : traces_node) {
+        if (!trace_spec.contains("port") || !trace_spec["port"].is_string()) {
+            detail::invalid_argument("load_traces_json: each trace must have a string 'port'");
+        }
+        if (!trace_spec.contains("name") || !trace_spec["name"].is_string()) {
+            detail::invalid_argument("load_traces_json: each trace must have a string 'name'");
+        }
+        tracer.add_trace(graph,
+                         trace_spec["port"].get<std::string>(),
+                         trace_spec["name"].get<std::string>());
     }
 }
 

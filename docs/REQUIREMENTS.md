@@ -1,7 +1,7 @@
 # Vehicle Control Stack — High-Level Requirements
 
 **Status**: draft · living document
-**Last updated**: 2026-05-01
+**Last updated**: 2026-05-07
 
 ## 1. Purpose & Vision
 
@@ -167,36 +167,43 @@ Steps 1–2 were infrastructure and unblocked 4–5. Step 3 was scope-reduced to
 - Tests: consolidated under root `tests/` (was split between `sim/tests/` and ekf's own tree). 49 unit tests cover ports, scheduling, PID, alt-hold, EKF block timestamp gating, dynamics, controller. CI runs them on every push.
 - Embedded: shared block runtime moved out of `sim::` into `shared::`; sensors decoupled from the EKF observer pointer; embedded `main.cpp` now uses the same `QuadrotorVehicle` composite as sim.
 
-### Tier 2 — Graph-driven composition
-Goal: headless Simulink. Sim reads a YAML/JSON graph spec, instantiates blocks, wires them, runs. A/B compare EKF variants without recompiling.
+### Tier 2 — Graph-driven composition (achieved)
+Goal: headless Simulink. Sim reads a JSON graph spec, instantiates blocks, wires them, runs. A/B compare estimator variants without recompiling.
 
-Tier 1 makes this a natural extension — the `connect()` calls currently hardcoded in the vehicle constructor are read from a graph spec instead. The block infrastructure is unchanged.
+Work:
+1. **First-class edges and `Graph` registry** ✓ — `shared::Graph` (`shared/core/graph.hpp`) owns the block list and an edge list with outgoing/incoming indices. A monotonic `version_` counter lets `CompositeBlock::freeze()` snapshot a topo order and abort on stale runs.
+2. **Type-erased port base** ✓ — `IPort` (`shared/core/block.hpp`) carries `type_id()` (per-T static-char address — RTTI-free), `is_input()`, `connect_to()`, and `read_erased()`. Typed `connect(out, in)` and string-keyed `Graph::connect("a.out", "b.in")` coexist; the latter resolves names through `Block::port(name)` and type-checks via pointer equality before wiring.
+3. **Block factory registry** ✓ — `shared::BlockFactory` maps string type names to `(name, params) → unique_ptr<Block>` ctors. `BlockParams` carries doubles, bools, and strings. `sim::register_quadrotor_blocks()` registers 14 leaf types (PID, alt-hold, attitude PID, dynamics, four sim sensors, two EKF variants, signal/torque/force disturbance, unit-delay).
+4. **Topological sort** ✓ — `Graph::topo_order()` with deterministic insertion-order tiebreak. `CompositeBlock::freeze()` caches it; `update()` walks the cache with zero allocation and aborts if `Graph::version()` moved since freeze.
+5. **Unit-delay blocks** ✓ — `shared::UnitDelayBlock<T>` overrides `is_delay()`; `topo_order()` ignores incoming edges into delay blocks. `set_held(T)` lets graph-driven setups seed the back-edge so closed loops start from a known state instead of `T{}`. Sim's `quad.json` uses one on the dynamics→sensors edge.
+6. **Signal-trace auto-logging** ✓ — `shared::SignalTracer` (`shared/core/tracer.hpp`) holds a `(type_id → serializer)` map plus a list of `(port, trace_name)`. JSON spec gets a `traces` array; `load_traces_json()` populates the tracer; `tracer.write_header()` / `write_row()` drive the CSV. Replaces the hand-rolled CSV in `sim/src/main.cpp`. The dead `IInterBlockData` / `DataLogger` infrastructure had been removed earlier and the slot was clean.
 
-#### Already in place from Tier 1
-- `shared::CompositeBlock` is the natural target for graph-driven children — same class, just children added from a spec instead of a constructor.
-- `connect(out, in)` is the canonical wiring primitive.
-- Sensor and state types unified — Tier 2's port type-erasure builds on a single type universe, not two.
-- `gtest_discover_tests` plus the root-level `tests/` tree means new graph-related blocks get test coverage in the same loop.
+#### Delivered
+- `sim/configs/quad.json` — flat closed-loop graph (10 blocks + unit-delay back-edge breaker, 15 edges, 5 traces) producing the same closed-loop behaviour as the original hardcoded `QuadrotorPlant` ctor.
+- `sim/configs/ekf_compare.json` — same topology, observer type swapped from `ekf16d` to `ekf16d_imu_only` (same C++ class, GNSS/baro/mag updates gated). Recompile-free A/B; visibly different drift behaviour confirms the swap mechanism.
+- `sim/src/main.cpp` slimmed to graph load + runtime config + tick loop + tracer-driven CSV.
 
-#### Work
-1. **First-class edges and a `Graph` registry.** Today `connect(out, in)` writes a raw pointer into `in.source`; nothing tracks the edge. A `Graph` (or `BlockRegistry`) that owns the canonical block-and-edge list is the foundation for both Tier 2 graph specs and Tier 3 mutation. With it, you can ask "what's downstream of this block?" before deleting it, do topological sort, and write a graph back out as YAML.
-2. **Type-erased port base** so `connect(port_a, port_b)` is callable without knowing T at the wiring site. Likely a runtime type tag plus a pool keyed by (block, port-name). Has to coexist with the existing template-typed `connect()` for the C++ wiring sites.
-3. **Block factory registry** mapping string names to constructors: `"ekf16d"` → `std::make_unique<EKF16d>(params)`, `"altitude_hold"` → `std::make_unique<AltitudeHoldBlock<>>(...)`. Each block module registers itself.
-4. **Topological sort** replacing hardcoded child ordering in `CompositeBlock`. Runs once after the graph is loaded; child ordering becomes a cached output of the sort.
-5. **Unit-delay blocks** for explicit algebraic-loop resolution. The current child-ordering trick assumes no algebraic loops; once topology is data-driven we need a way to break loops explicitly.
-6. **Signal-trace auto-logging.** Any port can be tagged in the graph spec; tagged ports get logged automatically. This replaces the dead `IInterBlockData` / `DataLogger` infrastructure left in the codebase from earlier — it should be deleted as part of this work item, not left lying around.
-
-#### Expected deliverable
-A `quad.yaml` (or `.json`) that produces the same closed-loop behaviour as the current hardcoded `QuadrotorPlant` ctor, plus an `ekf_compare.yaml` that swaps the EKF for an alternative observer with no recompile.
+Carry-over (not blocking Tier 2 closeout):
+- A genuine alternative observer class (AHRS-7, complementary filter, or float-EKF with an `INavObserver` adapter). Today's `ekf_compare.json` proves the swap mechanism but uses one C++ class with measurement gates flipped.
+- YAML support — JSON only, deliberately. JSON is a strict subset for these specs and no consumer has asked for YAML; revisit if/when an editor frontend wants comments or anchors.
+- Behavioural-parity test asserting `quad.json` and the historical hardcoded plant produce equivalent output (today: eyeballed, not asserted).
+- Pre-Tier-3 prep: `Graph::remove_block` / `Graph::disconnect`, plus storing the factory-type string on each `Block`, to enable JSON round-trip from a future GUI editor.
 
 ### Tier 3 — Visual editor + codegen (long-term)
 Goal: edit a block diagram in a UI, simulate it, then flash the same graph to the STM32.
 
+The editor is **in-process C++** — links the same `sim_lib` the host sim uses, manipulates a live `shared::Graph` directly, and serialises to JSON only for persistence. No Electron, Tauri, or browser layer; no IPC; no separate JS runtime. Stop-edit-resume is the workflow: pause the tick, mutate the graph, re-`freeze()`, resume.
+
+Frontend stack:
+- **Dear ImGui** (`ocornut/imgui`) — immediate-mode UI host. Pulled via FetchContent.
+- **ImNodes** (`Nelarius/imnodes`) — node-graph canvas extension; one node per block, edges via wired pins. Maps directly onto `shared::Graph` blocks/edges.
+- **ImPlot** (`epezent/implot`) — live signal plotting against the `SignalTracer` output, replacing the offline `plot_impulse.py` workflow for the inner loop.
+
 Work:
-- Electron/Tauri front-end with React Flow (or similar) for the graph editor.
-- Graph spec → YAML persistence.
-- Graph spec → C++ template emission for the embedded target (`step()` function + static block instances). No generic C codegen — emits against the existing block API.
-- Build integration: graph.yaml becomes a CMake input; changes trigger a re-emit.
+- ImGui/ImNodes/ImPlot integration: FetchContent declarations alongside the existing nlohmann/json + Eigen pattern. None of these ship as submodules.
+- Editor app (separate target, e.g. `sim/editor/`) that spawns an ImGui window, lets the user drop blocks from a palette (the `BlockFactory`'s registered types) and wire pins (`Block::port(name)` lookup).
+- Graph ↔ JSON round-trip: write back the in-memory graph as `quad.json`-shaped JSON. Requires the small Tier-3 prep (`Graph::remove_block`, `Graph::disconnect`, factory-type-string on `Block`).
+- Codegen path: graph spec → C++ template emission for the embedded target (`step()` function + static block instances). No generic C codegen — emits against the existing block API. CMake ingests the JSON; changes trigger a re-emit.
 
 ## 8. Risks & Open Questions
 
@@ -215,8 +222,15 @@ Work:
 - ~~`CompositeBlock::update()` calls children in wiring order — sufficient or need dynamic re-ordering?~~ Fixed wiring order is fine for Tier 1; Tier 2's topological sort will replace it.
 - ~~Sensor data and state types: should sim wrap them with logger sub-data, or use shared types directly?~~ Unified on shared types. Per-vehicle state extensions (fixed-wing airspeed, helicopter rotor RPM) will derive from the shared base when needed; quadrotor doesn't need any extension.
 
+### Resolved during Tier 2
+- ~~Spec format: YAML or JSON?~~ JSON only. JSON is a strict subset for these specs (numbers, strings, bools, arrays, objects) and the loader uses nlohmann/json which is host-only by design. No consumer has asked for YAML; revisit if a GUI editor wants comments / anchors.
+- ~~Algebraic-loop resolution: implicit via wiring order, or explicit?~~ Explicit. `UnitDelayBlock<T>` is a first-class block that `topo_order()` recognises via `is_delay()`; closed-loop graphs must declare their back-edge breakers.
+- ~~Logging interface: revive `IInterBlockData` / `DataLogger` or replace?~~ Replace. `SignalTracer` is graph-spec-driven (ports tagged via JSON `traces` array → CSV columns), host-only, decoupled from the block runtime. Embedded continues to use `ILogger`/SD on the raw sensor path per FR-6.
+
 ## 9. Document history
 - **2026-04-24** — initial draft, captures current state and Tier 0–3 roadmap.
 - **2026-04-24** — generalise scope from "drone" to any vehicle (flying types primary); drop standalone scalar-precision FR (kept as an implementation detail of FR-3, not a top-level requirement); add FR-4 vehicle-agnostic core.
 - **2026-04-26** — Tier 0 confirmed complete. Revised Tier 1: replace "sensor pack trait + factory template" approach with composite block / dependency injection model. A vehicle is a `CompositeBlock` that accepts sensor blocks by injection — no template metaprogramming, direct path to Tier 2 graph-driven wiring. Explicit `connect()` and `CompositeBlock` added as infrastructure prerequisites. Updated FR-1 and architecture section accordingly.
 - **2026-05-01** — Tier 1 closed out. `QuadrotorSystem` split into `shared::QuadrotorVehicle` (cross-target composite) + `sim::QuadrotorPlant` (sim wrapper adding dynamics + sim sensors + disturbance ports). Block runtime + concrete blocks (PID, alt-hold, attitude controller, EKF block) moved into `shared/`; one type universe for sensor and state data; sensors decoupled from observer; embedded `main.cpp` slimmed to use the same vehicle composite. Position-hold removed from scope (altitude-only). Test infrastructure consolidated under root `tests/`, mocks in `tests/mocks/`, 49 unit tests with CI gating. Tier 2 work list refined with concrete first steps (first-class edges + Graph registry as the foundation).
+- **2026-05-07** — Tier 2 closed out. All six work items landed: `Graph` + first-class edges, type-erased `IPort`, `BlockFactory` with concrete sim registrations, `Graph::topo_order()` with `CompositeBlock::freeze()` safety, `UnitDelayBlock<T>` for explicit algebraic-loop resolution, and `SignalTracer` for graph-spec-driven CSV logging. Sim drives end-to-end from `quad.json` (10 blocks + unit-delay, 15 edges, 5 traces); `ekf_compare.json` demonstrates recompile-free observer swap. 143 unit tests across the runtime + loader + tracer. Carry-over noted: alternative observer class, behavioural-parity test, and `Graph::remove_block` + factory-type-on-block as Tier 3 prep.
+- **2026-05-07** — Tier 3 plan revised: in-process **ImGui + ImNodes + ImPlot** editor instead of Electron/Tauri + React Flow. Editor links `sim_lib` directly and mutates the live `shared::Graph`, no IPC. JSON drops from "wire format" to "persistence format only". Empty `sim/imgui` and `sim/implot` submodules removed; the GUI deps will be FetchContent'd alongside Eigen and nlohmann/json when the editor target lands.
