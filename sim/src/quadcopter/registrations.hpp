@@ -9,7 +9,9 @@
 #include "../../../shared/blocks/quadrotor_ekf.hpp"
 #include "../../../shared/blocks/unit_delay.hpp"
 #include "../../../shared/core/block_factory.hpp"
+#include "../../../shared/core/tracer.hpp"
 #include "../../../shared/data/gnss_origin.hpp"
+#include "../../../shared/data/state.hpp"
 #include "../blocks/force_disturbance.hpp"
 #include "../blocks/sensors_impl.hpp"
 #include "../blocks/signal_generator.hpp"
@@ -278,6 +280,94 @@ inline void register_quadrotor_blocks(shared::BlockFactory& factory) {
             name, dir,
             static_cast<uint32_t>(p.get_double("update_period_us", 1000)));
     });
+}
+
+// Type → CSV-column serializers for the sim's port types. Registered
+// once at startup before the JSON `traces` section is parsed.
+//
+// Conventions:
+//   - Angles are emitted in degrees (existing CSV / plot convention).
+//   - Geodetic positions are emitted as lat_deg/lon_deg/alt_m so columns
+//     are human-scaled. The EKF stores lat/lon in radians internally;
+//     this is the read-side conversion.
+//   - Linear velocities and rates are SI (m/s, rad/s). The original
+//     hand-rolled CSV mixed units (rates in deg/s, position in m); the
+//     auto-logger keeps it consistent in SI and lets plot scripts
+//     convert per-axis if they want degrees.
+inline void register_quadrotor_traces(shared::SignalTracer& tracer) {
+    using std::ostream;
+
+    // ---- Scalar (1 column) -------------------------------------------
+    tracer.register_type<shared::Scalar>(
+        [](ostream& os, std::string_view name) {
+            os << name;
+        },
+        [](ostream& os, const shared::Scalar& v) {
+            os << v.value();
+        });
+
+    // ---- TrueState (12 columns: pos, vel, euler, ω) ------------------
+    auto write_truestate_header = [](ostream& os, std::string_view name) {
+        const std::string n(name);
+        os << n << "_x,"     << n << "_y,"     << n << "_z,"
+           << n << "_vx,"    << n << "_vy,"    << n << "_vz,"
+           << n << "_roll,"  << n << "_pitch," << n << "_yaw,"
+           << n << "_wx,"    << n << "_wy,"    << n << "_wz";
+    };
+    auto write_truestate_value = [](ostream& os, const shared::TrueState& s) {
+        const auto e = s.euler_angles();
+        os << s.position.x() << "," << s.position.y() << "," << s.position.z() << ","
+           << s.velocity.x() << "," << s.velocity.y() << "," << s.velocity.z() << ","
+           << (e.x() * 180.0 / M_PI) << ","
+           << (e.y() * 180.0 / M_PI) << ","
+           << (e.z() * 180.0 / M_PI) << ","
+           << s.angular_velocity.x() << ","
+           << s.angular_velocity.y() << ","
+           << s.angular_velocity.z();
+    };
+    tracer.register_type<shared::TrueState>(write_truestate_header,
+                                            write_truestate_value);
+
+    // ---- NavigationState (TrueState + biases; 16 columns) ------------
+    // Position is in geodetic radians on the wire; convert to degrees here
+    // so plots are immediately readable. The 12 kinematic columns mirror
+    // TrueState so the same plot scripts can target either trace; the four
+    // bias columns are appended.
+    tracer.register_type<shared::NavigationState>(
+        [](ostream& os, std::string_view name) {
+            const std::string n(name);
+            os << n << "_lat_deg," << n << "_lon_deg," << n << "_alt_m,"
+               << n << "_vx,"      << n << "_vy,"      << n << "_vz,"
+               << n << "_roll,"    << n << "_pitch,"   << n << "_yaw,"
+               << n << "_wx,"      << n << "_wy,"      << n << "_wz,"
+               << n << "_ax_bias," << n << "_ay_bias," << n << "_az_bias,"
+               << n << "_baro_bias";
+        },
+        [](ostream& os, const shared::NavigationState& s) {
+            const auto e = s.euler_angles();
+            os << (s.position.x() * 180.0 / M_PI) << ","
+               << (s.position.y() * 180.0 / M_PI) << ","
+               <<  s.position.z()                 << ","
+               << s.velocity.x() << "," << s.velocity.y() << "," << s.velocity.z() << ","
+               << (e.x() * 180.0 / M_PI) << ","
+               << (e.y() * 180.0 / M_PI) << ","
+               << (e.z() * 180.0 / M_PI) << ","
+               << s.angular_velocity.x() << ","
+               << s.angular_velocity.y() << ","
+               << s.angular_velocity.z() << ","
+               << s.accel_bias.x() << "," << s.accel_bias.y() << "," << s.accel_bias.z() << ","
+               << s.baro_bias;
+        });
+
+    // ---- MotorEfforts (4 columns) ------------------------------------
+    tracer.register_type<shared::MotorEfforts>(
+        [](ostream& os, std::string_view name) {
+            const std::string n(name);
+            os << n << "_m0," << n << "_m1," << n << "_m2," << n << "_m3";
+        },
+        [](ostream& os, const shared::MotorEfforts& e) {
+            os << e[0] << "," << e[1] << "," << e[2] << "," << e[3];
+        });
 }
 
 } // namespace sim

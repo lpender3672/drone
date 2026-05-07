@@ -94,5 +94,12 @@
 
         { "from": "dist_gen.signal",  "to": "dist_torque.scalar"          },
         { "from": "dist_torque.torque", "to": "dynamics.disturbance_torque" }
+    ],
+    "traces": [
+        { "port": "dynamics.state",  "name": "truth"        },
+        { "port": "ekf.state",       "name": "ekf"          },
+        { "port": "alt_hold.thrust", "name": "thrust_cmd"   },
+        { "port": "att_ctrl.motors", "name": "motor"        },
+        { "port": "dist_gen.signal", "name": "dist_torque_nm" }
     ]
 }
