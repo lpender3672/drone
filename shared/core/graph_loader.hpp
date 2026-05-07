@@ -129,6 +129,52 @@ inline void load_graph_json(const std::string& json_text,
     }
 }
 
+// Inverse of `load_graph_json` — emit a JSON document representing the
+// graph's topology. Round-trip contract:
+//
+//   load_graph_json(text, factory, g);
+//   const std::string out = dump_graph_json(g);
+//   Graph g2;
+//   load_graph_json(out, factory, g2);
+//   // g2 has the same block_count / edge_count / edge endpoints as g.
+//
+// Slice 4 limitation: parameter values are NOT round-tripped. Each
+// block's compile-time defaults apply on reload; if you need tuning to
+// survive save/load you must edit the JSON manually for now. (A follow-
+// up slice can stash the source `BlockParams` on each block.)
+//
+// Throws if any block lacks a `type_name` — typically blocks built
+// directly in C++ rather than through `BlockFactory::create`. Without
+// it we couldn't emit a valid `"type": "..."` for the loader.
+inline std::string dump_graph_json(const Graph& graph, int indent = 2) {
+    using nlohmann::json;
+    json doc = json::object();
+    doc["blocks"] = json::array();
+    doc["edges"]  = json::array();
+
+    for (const auto& block_uptr : graph.blocks()) {
+        const Block* b = block_uptr.get();
+        if (b->type_name().empty()) {
+            detail::invalid_argument(
+                "dump_graph_json: block '" + b->name() +
+                "' has no type_name (was it created without BlockFactory?)");
+        }
+        json bj;
+        bj["type"] = b->type_name();
+        bj["name"] = b->name();
+        doc["blocks"].push_back(std::move(bj));
+    }
+
+    for (const Edge& e : graph.edges()) {
+        json ej;
+        ej["from"] = e.src_block->name() + "." + e.src_port;
+        ej["to"]   = e.dst_block->name() + "." + e.dst_port;
+        doc["edges"].push_back(std::move(ej));
+    }
+
+    return doc.dump(indent);
+}
+
 // Populate `tracer` from the document's `traces` array. The graph must
 // already be loaded — `add_trace` looks ports up by name. Missing
 // `traces` is fine (no-op); a malformed entry throws.

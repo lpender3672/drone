@@ -6,6 +6,7 @@ build
 build_*
 .cache
 .DS_Store
+imgui.ini
 *.pdf
 cad
 *.xlsx

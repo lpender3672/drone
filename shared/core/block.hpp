@@ -61,6 +61,13 @@ public:
         detail::invalid_argument(
             "IPort::connect_to: only OutputPort can be a connection source");
     }
+
+    // Called on an INPUT port to clear its source pointer (post-edge
+    // removal). Default no-op — outputs have nothing to disconnect on
+    // the read side. InputPort<T> overrides to null `source` and clear
+    // `connected`. Used by Graph::disconnect / Graph::remove_block to
+    // tear down a wire without leaving the input dangling.
+    virtual void disconnect_source() {}
 };
 
 // Forward declaration needed for InputPort::source pointer
@@ -89,6 +96,10 @@ struct InputPort : public IPort {
     const void*      read_erased() const override {
         return source ? static_cast<const void*>(&source->value)
                       : static_cast<const void*>(&value_);
+    }
+    void             disconnect_source() override {
+        source    = nullptr;
+        connected = false;
     }
 
     // Push a value into a port that has no upstream block (e.g. an external
@@ -180,6 +191,17 @@ public:
     const std::string& name() const { return name_; }
     uint32_t update_period_us() const { return update_period_us_; }
 
+    // Factory-key string set by BlockFactory::create at construction
+    // time (e.g. "ekf16d", "altitude_hold"). Empty for blocks built
+    // directly in C++ without going through the factory.
+    //
+    // Used by the JSON write-back path (`dump_graph_json` in
+    // graph_loader.hpp) to round-trip the graph: each block's
+    // `type_name` is what gets emitted, then the loader uses it to
+    // re-instantiate via the factory.
+    const std::string& type_name() const { return type_name_; }
+    void set_type_name(const std::string& tn) { type_name_ = tn; }
+
     bool is_due(uint64_t current_time_us) const {
         if (update_period_us_ == 0) {
             return true;
@@ -200,6 +222,12 @@ public:
         return nullptr;
     }
 
+    // All registered ports, in registration order. Read-only — port
+    // lifetime is tied to the owning block. Used by the editor canvas
+    // to enumerate pins per node and by tooling that needs to walk a
+    // block's full surface (e.g. introspection / round-trip serialise).
+    const std::vector<IPort*>& ports() const { return ports_; }
+
 protected:
     void mark_updated(uint64_t current_time_us) {
         last_update_time_us_ = current_time_us;
@@ -215,6 +243,7 @@ protected:
     }
 
     std::string name_;
+    std::string type_name_;
     uint32_t update_period_us_;
     uint64_t last_update_time_us_;
     bool has_updated_;

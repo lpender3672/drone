@@ -61,9 +61,43 @@ target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
 # benefit from -Wall/-Wextra.
 target_compile_options(imgui PRIVATE -w)
 
+# ---- ImNodes (node-graph canvas extension to ImGui) ----------------------
+# Single TU, depends on ImGui. The library doesn't ship a CMake target so
+# we wire it in by hand — minimal and stable, fork rate is low.
+FetchContent_Declare(
+    imnodes
+    GIT_REPOSITORY https://github.com/Nelarius/imnodes.git
+    GIT_TAG        v0.5
+)
+FetchContent_MakeAvailable(imnodes)
+
+add_library(imnodes STATIC
+    ${imnodes_SOURCE_DIR}/imnodes.cpp
+)
+target_include_directories(imnodes PUBLIC ${imnodes_SOURCE_DIR})
+target_link_libraries(imnodes PUBLIC imgui)
+# ImNodes uses ImVec2 arithmetic (`a + b`, `a - b`) which lives behind
+# IMGUI_DEFINE_MATH_OPERATORS in imgui_internal.h. Must be set BEFORE
+# the imgui.h include, so propagate it as a compile definition rather
+# than relying on imnodes.cpp ordering its own #defines.
+target_compile_definitions(imnodes PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
+target_compile_options(imnodes PRIVATE -w)
+
+# ---- Native file dialog (btzy/nativefiledialog-extended) ------------------
+# Cross-platform native picker (Cocoa on macOS, GTK on Linux, COM/IFileDialog
+# on Windows). MIT, single CMake target `nfd`.
+FetchContent_Declare(
+    nfd
+    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+    GIT_TAG        v1.2.1
+)
+set(NFD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(nfd)
+
 # ---- Editor executable ---------------------------------------------------
 add_executable(editor
     main.cpp
+    $<TARGET_OBJECTS:ekf_obj>
 )
 target_include_directories(editor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -71,4 +105,4 @@ target_include_directories(editor PRIVATE
 # sim_lib is the host-side block runtime + concrete block headers. Linking
 # it now (even though slice 1 doesn't use it) means slice 2's "load
 # quad.json into the canvas" already has the types in scope.
-target_link_libraries(editor PRIVATE sim_lib imgui glfw OpenGL::GL)
+target_link_libraries(editor PRIVATE sim_lib imgui imnodes nfd glfw OpenGL::GL)

@@ -72,6 +72,12 @@ target_include_directories(test_includes INTERFACE
 )
 target_link_libraries(test_includes INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
+# Hand the repo root in as a compile definition so tests that load
+# JSON specs (round-trip, etc.) don't depend on CWD.
+target_compile_definitions(test_includes INTERFACE
+    DRONE_REPO_ROOT="${CMAKE_CURRENT_LIST_DIR}/.."
+)
+
 # Single test binary for fast feedback. If it grows slow, split by domain
 # (shared_tests, sim_tests) — never re-establish a separate runner per
 # subtree.
@@ -82,7 +88,14 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/editor/test_*.cpp"
 )
 
-add_executable(drone_tests ${TEST_SOURCES})
+# Round-trip test instantiates EKF16d via the block factory, so the
+# EKF translation units join the test binary. (The quadrotor tests
+# elsewhere don't touch the factory and don't need these.)
+add_executable(drone_tests
+    ${TEST_SOURCES}
+    ${CMAKE_CURRENT_LIST_DIR}/../ekf/shared/ekf16.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/../ekf/shared/ekf16d.cpp
+)
 
 target_link_libraries(drone_tests
     PRIVATE

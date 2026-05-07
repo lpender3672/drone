@@ -56,11 +56,20 @@ target_include_directories(sim_lib INTERFACE
 
 target_link_libraries(sim_lib INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
+# EKF object library: the only non-header sim/shared TU set, compiled
+# once and reused by quad_sim and editor (both instantiate EKF16d via
+# the block factory). Avoids the duplicate-compile + ODR risk that
+# came with sticking the .cpps in each executable's source list.
+add_library(ekf_obj OBJECT
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16.cpp
+    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
+)
+target_link_libraries(ekf_obj PRIVATE sim_lib)
+
 # Main executable
 add_executable(quad_sim
     src/main.cpp
-    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16.cpp
-    ${CMAKE_SOURCE_DIR}/../ekf/shared/ekf16d.cpp
+    $<TARGET_OBJECTS:ekf_obj>
 )
 
 target_link_libraries(quad_sim PRIVATE sim_lib)
