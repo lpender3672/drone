@@ -13,27 +13,39 @@
 namespace shared {
 
 // Generic key-value parameter blob handed to a factory ctor at create time.
-// Slice 3 carries doubles only (covers PID gains, alt-hold gains, etc.);
-// extend with strings / vectors when a block type needs them. Keeping it
-// minimal and homogeneous makes YAML deserialisation in a later slice
-// trivial — keys map straight from the YAML node.
+// Carries doubles (numeric tunings — PID gains, noise stddevs, etc.) and
+// strings (enum-like tags — waveform type, observer variant). Vector / 3-axis
+// values are split into _x/_y/_z keys at the call site; struct-of-doubles
+// blobs (e.g. EKF noise param sets) flatten the same way. Keys not set fall
+// through to the block ctor's compiled defaults.
 class BlockParams {
 public:
     void set(std::string_view key, double value) {
-        values_[std::string(key)] = value;
+        doubles_[std::string(key)] = value;
+    }
+    void set_string(std::string_view key, std::string_view value) {
+        strings_[std::string(key)] = std::string(value);
     }
 
     bool has(std::string_view key) const {
-        return values_.find(std::string(key)) != values_.end();
+        return doubles_.find(std::string(key)) != doubles_.end()
+            || strings_.find(std::string(key)) != strings_.end();
     }
 
     double get_double(std::string_view key, double default_value = 0.0) const {
-        const auto it = values_.find(std::string(key));
-        return it == values_.end() ? default_value : it->second;
+        const auto it = doubles_.find(std::string(key));
+        return it == doubles_.end() ? default_value : it->second;
+    }
+
+    std::string get_string(std::string_view key,
+                           const std::string& default_value = "") const {
+        const auto it = strings_.find(std::string(key));
+        return it == strings_.end() ? default_value : it->second;
     }
 
 private:
-    std::unordered_map<std::string, double> values_;
+    std::unordered_map<std::string, double>      doubles_;
+    std::unordered_map<std::string, std::string> strings_;
 };
 
 // Factory ctor: takes the block's runtime name (the key for graph wiring,

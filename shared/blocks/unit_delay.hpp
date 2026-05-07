@@ -31,6 +31,16 @@ public:
 
     bool is_delay() const override { return true; }
 
+    // Seed both the held value (read on next tick) and the currently-published
+    // output. Used post-construction by graph-driven setups that need the
+    // delay to start on a known state instead of T{} — e.g. a sim closed
+    // loop that wants sensors to see the init pose on tick 0, before the
+    // first dynamics update has populated the ring.
+    void set_held(const T& v) {
+        held_                = v;
+        this->output_.value  = v;
+    }
+
     bool update(uint64_t t) override {
         if (!this->is_due(t)) return false;
 

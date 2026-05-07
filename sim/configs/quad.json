@@ -1,0 +1,98 @@
+{
+    "_comment": [
+        "Tier 2 deliverable: flat graph spec that produces the same closed-loop",
+        "behaviour as the original hardcoded QuadrotorPlant ctor in sim/src/main.cpp.",
+        "Block instantiation goes through sim::register_quadrotor_blocks().",
+        "Initial pose, alt-hold setpoint, attitude reference, dynamics reset, and",
+        "the EKF observer's reset() are runtime config (not topology) and live in",
+        "sim/src/main.cpp post-load, not here."
+    ],
+    "blocks": [
+        {
+            "type": "quadrotor_dynamics", "name": "dynamics",
+            "params": {
+                "mass": 0.5,
+                "arm_length": 0.175,
+                "inertia_x": 0.0035, "inertia_y": 0.0035, "inertia_z": 0.0055,
+                "motor_tau": 0.02, "motor_omega_max": 2500.0,
+                "prop_k_t": 3.27e-7, "prop_k_q": 4.25e-9, "prop_d": 1.0, "prop_rho": 1.225,
+                "update_period_us": 1000, "internal_period_us": 10000
+            }
+        },
+        {
+            "type": "imu_sensor", "name": "imu",
+            "params": { "update_period_us": 1000, "latency_us": 0 }
+        },
+        {
+            "type": "gps_sensor", "name": "gnss",
+            "params": {
+                "update_period_us": 100000, "latency_us": 80000,
+                "origin_lat_deg": 52.2053, "origin_lon_deg": 0.1218, "origin_alt_m": 10.0
+            }
+        },
+        {
+            "type": "baro_sensor", "name": "baro",
+            "params": {
+                "update_period_us": 50000, "latency_us": 20000,
+                "origin_alt_m": 10.0
+            }
+        },
+        {
+            "type": "mag_sensor", "name": "mag",
+            "params": { "update_period_us": 20000, "latency_us": 0 }
+        },
+        {
+            "type": "ekf16d", "name": "ekf",
+            "params": {
+                "update_period_us": 1000,
+                "origin_lat_deg": 52.2053, "origin_lon_deg": 0.1218, "origin_alt_m": 10.0
+            }
+        },
+        {
+            "type": "altitude_hold", "name": "alt_hold",
+            "params": { "update_period_us": 1000 }
+        },
+        {
+            "type": "attitude_pid", "name": "att_ctrl",
+            "params": { "update_period_us": 1000 }
+        },
+        {
+            "type": "waveform_generator", "name": "dist_gen",
+            "params": {
+                "waveform": "impulse", "amplitude": 0.1,
+                "start_time_s": 1.0, "duration_s": 0.01,
+                "update_period_us": 1000
+            }
+        },
+        {
+            "type": "torque_disturbance", "name": "dist_torque",
+            "params": { "axis_x": 1.0, "axis_y": 0.0, "axis_z": 0.0, "update_period_us": 1000 }
+        },
+        {
+            "_comment": "Algebraic-loop breaker on the dynamics→sensors back-edge. Sensors read previous-tick truth — same one-step delay the original hardcoded plant relied on implicitly via wiring order.",
+            "type": "unit_delay_truestate", "name": "truth_delay",
+            "params": { "update_period_us": 1000 }
+        }
+    ],
+    "edges": [
+        { "from": "dynamics.state",   "to": "truth_delay.in"  },
+        { "from": "truth_delay.out",  "to": "imu.true_state"  },
+        { "from": "truth_delay.out",  "to": "gnss.true_state" },
+        { "from": "truth_delay.out",  "to": "baro.true_state" },
+        { "from": "truth_delay.out",  "to": "mag.true_state"  },
+
+        { "from": "imu.reading",  "to": "ekf.imu"  },
+        { "from": "gnss.reading", "to": "ekf.gnss" },
+        { "from": "baro.reading", "to": "ekf.baro" },
+        { "from": "mag.reading",  "to": "ekf.mag"  },
+
+        { "from": "ekf.state", "to": "alt_hold.state" },
+        { "from": "ekf.state", "to": "att_ctrl.state" },
+
+        { "from": "alt_hold.thrust", "to": "att_ctrl.thrust" },
+        { "from": "att_ctrl.motors", "to": "dynamics.efforts" },
+
+        { "from": "dist_gen.signal",  "to": "dist_torque.scalar"          },
+        { "from": "dist_torque.torque", "to": "dynamics.disturbance_torque" }
+    ]
+}

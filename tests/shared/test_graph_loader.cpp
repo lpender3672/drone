@@ -174,15 +174,21 @@ TEST(GraphLoader, ThrowsOnMissingEdgeFields) {
     })", f, g), std::invalid_argument);
 }
 
-TEST(GraphLoader, ThrowsOnNonNumericParam) {
+TEST(GraphLoader, ThrowsOnUnsupportedParamType) {
     auto f = make_factory_with_mock();
     Graph g;
 
-    // Slice 7 supports double-only params; a string should fail explicitly
-    // rather than be silently dropped.
+    // BlockParams supports number, bool, and string. Anything else (array,
+    // nested object, null) is rejected explicitly rather than silently
+    // dropped — better to fail fast than ship a misconfigured graph.
     EXPECT_THROW(load_graph_json(R"({
         "blocks": [{"type": "mock", "name": "x",
-                    "params": {"seed_value": "not_a_number"}}]
+                    "params": {"seed_value": [1, 2, 3]}}]
+    })", f, g), std::invalid_argument);
+
+    EXPECT_THROW(load_graph_json(R"({
+        "blocks": [{"type": "mock", "name": "y",
+                    "params": {"nested": {"foo": 1}}}]
     })", f, g), std::invalid_argument);
 }
 

@@ -13,6 +13,20 @@ if(NOT TARGET Eigen3::Eigen)
   FetchContent_MakeAvailable(eigen)
 endif()
 
+# nlohmann/json — header-only JSON parser used by the Tier 2 graph loader.
+# Prefer a system install; fall back to FetchContent. Same flow as the test
+# build (tests/CMakeLists.txt).
+find_package(nlohmann_json 3.11 QUIET)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    FetchContent_Declare(
+        json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(json)
+endif()
+
 # Warnings
 add_compile_options(-Wall -Wextra -Wpedantic)
 
@@ -32,7 +46,7 @@ target_include_directories(sim_lib INTERFACE
     ${CMAKE_SOURCE_DIR}/../ekf/shared
 )
 
-target_link_libraries(sim_lib INTERFACE Eigen3::Eigen)
+target_link_libraries(sim_lib INTERFACE Eigen3::Eigen nlohmann_json::nlohmann_json)
 
 # Main executable
 add_executable(quad_sim

@@ -38,7 +38,15 @@ public:
         , baro_input_("baro")
         , mag_input_("mag")
         , output_("state")
-    {}
+    {
+        // Direct Block subclass — register the ports manually so graph-spec
+        // wiring (Tier 2) can find them by name.
+        this->register_port(imu_input_);
+        this->register_port(gnss_input_);
+        this->register_port(baro_input_);
+        this->register_port(mag_input_);
+        this->register_port(output_);
+    }
 
     InputPort<TImu>&          imu_input()  { return imu_input_; }
     InputPort<TGnss>&         gnss_input() { return gnss_input_; }

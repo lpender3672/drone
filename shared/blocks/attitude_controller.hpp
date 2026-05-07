@@ -49,7 +49,7 @@ public:
     AttitudePidControllerT(const std::string& name,
                            const Params& params,
                            uint32_t update_period_us = 1000u)
-        : Base(name, "", "", "", update_period_us)
+        : Base(name, "state", "reference", "motors", update_period_us)
         , params_(params)
         , mixer_(default_mixer())
         , rate_setpoints_{{
@@ -58,6 +58,14 @@ public:
               OutputPort<PidInput>(name + "_rate_in_2"),
           }}
     {
+        // The base ControllerBlock doesn't auto-register its three ports
+        // (it predates the IPort/graph-spec wiring path); register them
+        // here so graph-spec wiring can find them by name.
+        this->register_port(this->state_input_);
+        this->register_port(this->reference_input_);
+        this->register_port(this->output_);
+        this->register_port(this->thrust_input_);
+
         for (int i = 0; i < 3; ++i) {
             rate_pids_[i] = std::make_unique<PidBlock>(
                 name + "_rate_pid_" + std::to_string(i),
@@ -132,7 +140,7 @@ private:
     Eigen::Matrix<double, 4, 4> mixer_;
     std::array<std::unique_ptr<PidBlock>, 3> rate_pids_;
     std::array<OutputPort<PidInput>, 3>      rate_setpoints_;
-    InputPort<Scalar> thrust_input_{"thrust_override"};
+    InputPort<Scalar> thrust_input_{"thrust"};
 };
 
 // Default instantiation for embedded targets.

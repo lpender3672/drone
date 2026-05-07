@@ -86,10 +86,14 @@ inline void load_graph_json(const std::string& json_text,
                 for (auto it = params_node.begin(); it != params_node.end(); ++it) {
                     if (it.value().is_number()) {
                         params.set(it.key(), it.value().get<double>());
+                    } else if (it.value().is_boolean()) {
+                        params.set(it.key(), it.value().get<bool>() ? 1.0 : 0.0);
+                    } else if (it.value().is_string()) {
+                        params.set_string(it.key(), it.value().get<std::string>());
                     } else {
                         detail::invalid_argument(
                             "load_graph_json: param '" + it.key() + "' on block '" +
-                            block_name + "' must be a number (slice 7 supports doubles only)");
+                            block_name + "' must be a number, bool, or string");
                     }
                 }
             }

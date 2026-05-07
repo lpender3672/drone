@@ -2,6 +2,7 @@
 
 #include "sim_sensor.hpp"
 #include "../data/gnss_origin.hpp"
+#include "../data/state.hpp"
 #include <sensor_readings.h>
 #include <sensor_constants.h>
 
